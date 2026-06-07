@@ -1,0 +1,15 @@
+{
+  "dataset_name": "pilates_samples_synthetic_25",
+  "description": "Synthetic sample Pilates pose dataset for quick multimodal fine-tuning tests in Colab.",
+  "note": "These are AI-generated sample images, not original AIHub images.",
+  "classes": [
+    "hundred",
+    "teaser",
+    "swan",
+    "bridge",
+    "plank"
+  ],
+  "images_per_class": 5,
+  "total_images": 25,
+  "recommended_root_for_notebook": "/content/pilates_samples"
+}
