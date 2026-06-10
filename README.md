@@ -1,4 +1,6 @@
 ## 시스템 아키텍처
+모든작업은 codeset 폴더 내가 기준입니다!
+
 ```
 MySQL → Vector DB (ChromaDB) → FastAPI → Streamlit UI
 ```
