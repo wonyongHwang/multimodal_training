@@ -37,20 +37,7 @@ pip install -r requirements_finetune.txt
 
 ```env
 # MySQL 설정
-DB_HOST=my8003.gabiadb.com
-DB_PORT=3306
-DB_NAME=hkcodedb
-DB_USER=hkcode
-DB_PASSWORD=fintech1308!
 
-VECTORDB_TYPE=chromadb
-VECTORDB_PATH=./vectordb
-# full  전체 재 incremental : creatdttm 기준 이후건만 업데이트
-VECTORDB_MODE = full
-
-UPDATE_THRESHOLD_HOURS=24
-HF_TOKEN=본인허깅페이스토큰입력
-OPENAI_API_KEY=본인OPENAI_API_KEY입력
 ```
 
 ## 스크립트 실행 순서 파트1 LLM 모델 파인튜닝

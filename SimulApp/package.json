@@ -1,0 +1,14 @@
+{
+  "name": "simul-app",
+  "version": "1.0.0",
+  "description": "Gemma3 파인튜닝 시뮬레이션 관리 웹앱",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "mysql2": "^3.6.0",
+    "dotenv": "^16.3.1"
+  }
+}
