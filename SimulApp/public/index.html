@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Gemma3 파인튜닝 시뮬레이션</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Segoe UI', sans-serif; background: #f0f2f5; color: #222; }
+
+    header {
+      background: #1a1a2e; color: #e0e0ff; padding: 14px 28px;
+      display: flex; align-items: center; gap: 12px;
+    }
+    header h1 { font-size: 1.2rem; font-weight: 600; }
+
+    .tabs {
+      display: flex; gap: 0; border-bottom: 2px solid #ddd;
+      background: #fff; padding: 0 24px;
+    }
+    .tab-btn {
+      padding: 12px 24px; border: none; background: none;
+      cursor: pointer; font-size: 0.95rem; color: #666;
+      border-bottom: 3px solid transparent; margin-bottom: -2px;
+    }
+    .tab-btn.active { color: #1a1a2e; border-bottom-color: #5c6bc0; font-weight: 600; }
+
+    .tab-panel { display: none; padding: 24px; }
+    .tab-panel.active { display: block; }
+
+    /* ── 설정 탭 ── */
+    .card {
+      background: #fff; border-radius: 10px;
+      box-shadow: 0 2px 8px rgba(0,0,0,.08);
+      padding: 22px 28px; margin-bottom: 20px;
+    }
+    .card h2 { font-size: 1rem; font-weight: 600; margin-bottom: 16px; color: #444; }
+
+    .form-grid {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 14px 24px;
+    }
+    .form-group { display: flex; flex-direction: column; gap: 5px; }
+    .form-group label { font-size: 0.82rem; color: #666; font-weight: 500; }
+    .form-group input {
+      padding: 8px 10px; border: 1px solid #ddd; border-radius: 6px;
+      font-size: 0.92rem; transition: border-color .2s;
+    }
+    .form-group input:focus { outline: none; border-color: #5c6bc0; }
+
+    .btn-row { display: flex; gap: 12px; margin-top: 8px; }
+    .btn {
+      padding: 10px 26px; border: none; border-radius: 7px;
+      font-size: 0.92rem; cursor: pointer; font-weight: 600; transition: opacity .2s;
+    }
+    .btn:hover { opacity: .85; }
+    .btn-save  { background: #5c6bc0; color: #fff; }
+    .btn-start { background: #2e7d32; color: #fff; }
+    .btn-stop  { background: #c62828; color: #fff; }
+
+    .status-badge {
+      display: inline-block; padding: 3px 10px; border-radius: 12px;
+      font-size: 0.8rem; font-weight: 600;
+    }
+    .status-idle    { background: #e8eaf6; color: #5c6bc0; }
+    .status-running { background: #e8f5e9; color: #2e7d32; }
+
+    #logBox {
+      background: #1a1a2e; color: #a5d6a7; font-family: monospace;
+      font-size: 0.8rem; padding: 12px; border-radius: 8px;
+      height: 260px; overflow-y: auto; white-space: pre-wrap;
+    }
+
+    /* ── 결과 탭 ── */
+    .sim-table { width: 100%; border-collapse: collapse; font-size: 0.87rem; }
+    .sim-table th {
+      background: #e8eaf6; padding: 10px 12px; text-align: left;
+      font-weight: 600; color: #555;
+    }
+    .sim-table td { padding: 9px 12px; border-bottom: 1px solid #eee; }
+    .sim-table tr:hover td { background: #f9f9ff; cursor: pointer; }
+
+    .s-running   { color: #2e7d32; font-weight: 600; }
+    .s-completed { color: #1565c0; font-weight: 600; }
+    .s-failed    { color: #c62828; font-weight: 600; }
+
+    #chartWrap { position: relative; height: 340px; }
+
+    .empty-msg { text-align: center; color: #aaa; padding: 40px 0; font-size: 0.95rem; }
+  </style>
+</head>
+<body>
+
+<header>
+  <span style="font-size:1.5rem;">🧠</span>
+  <h1>Gemma3 멀티모달 파인튜닝 시뮬레이션</h1>
+</header>
+
+<div class="tabs">
+  <button class="tab-btn active" onclick="switchTab('cfg')">⚙ 학습 설정</button>
+  <button class="tab-btn"        onclick="switchTab('res')">📊 시뮬레이션 결과</button>
+</div>
+
+<!-- ============================================================ -->
+<!-- 탭 1: 학습 설정                                             -->
+<!-- ============================================================ -->
+<div id="tab-cfg" class="tab-panel active">
+
+  <div class="card">
+    <h2>데이터 / 모델 설정</h2>
+    <div class="form-grid">
+      <div class="form-group">
+        <label>DATASET_REPO</label>
+        <input id="cfg-dataset_repo" type="text" placeholder="hyokwan/multi_modal_sample" />
+      </div>
+      <div class="form-group">
+        <label>BASE_MODEL</label>
+        <input id="cfg-base_model" type="text" placeholder="google/gemma-3-4b-it" />
+      </div>
+      <div class="form-group">
+        <label>OUTPUT_BASE_DIR</label>
+        <input id="cfg-output_base_dir" type="text" placeholder="./models" />
+      </div>
+      <div class="form-group">
+        <label>MAX_TRAIN_SAMPLES (빈값=전체)</label>
+        <input id="cfg-max_train_samples" type="text" placeholder="" />
+      </div>
+      <div class="form-group">
+        <label>MAX_EVAL_SAMPLES (빈값=전체)</label>
+        <input id="cfg-max_eval_samples" type="text" placeholder="" />
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>학습 하이퍼파라미터</h2>
+    <div class="form-grid">
+      <div class="form-group">
+        <label>MAX_SEQ_LENGTH</label>
+        <input id="cfg-max_seq_length" type="text" placeholder="768" />
+      </div>
+      <div class="form-group">
+        <label>TRAIN BATCH SIZE (per device)</label>
+        <input id="cfg-per_device_train_batch_size" type="text" placeholder="1" />
+      </div>
+      <div class="form-group">
+        <label>EVAL BATCH SIZE (per device)</label>
+        <input id="cfg-per_device_eval_batch_size" type="text" placeholder="1" />
+      </div>
+      <div class="form-group">
+        <label>GRAD_ACCUM</label>
+        <input id="cfg-grad_accum" type="text" placeholder="4" />
+      </div>
+      <div class="form-group">
+        <label>NUM_EPOCHS</label>
+        <input id="cfg-num_epochs" type="text" placeholder="5" />
+      </div>
+      <div class="form-group">
+        <label>LEARNING_RATE</label>
+        <input id="cfg-learning_rate" type="text" placeholder="0.0002" />
+      </div>
+      <div class="form-group">
+        <label>LOGGING_STEPS</label>
+        <input id="cfg-logging_steps" type="text" placeholder="10" />
+      </div>
+      <div class="form-group">
+        <label>SAVE_STEPS</label>
+        <input id="cfg-save_steps" type="text" placeholder="100" />
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>LoRA 설정</h2>
+    <div class="form-grid">
+      <div class="form-group">
+        <label>LORA_R</label>
+        <input id="cfg-lora_r" type="text" placeholder="16" />
+      </div>
+      <div class="form-group">
+        <label>LORA_ALPHA</label>
+        <input id="cfg-lora_alpha" type="text" placeholder="32" />
+      </div>
+      <div class="form-group">
+        <label>LORA_DROPOUT</label>
+        <input id="cfg-lora_dropout" type="text" placeholder="0.05" />
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div style="display:flex; align-items:center; gap:16px; margin-bottom:14px;">
+      <h2 style="margin:0;">학습 실행</h2>
+      <span id="runBadge" class="status-badge status-idle">대기 중</span>
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-save"  onclick="saveConfig()">설정 저장</button>
+      <button class="btn btn-start" onclick="startTraining()">▶ 학습 시작</button>
+    </div>
+    <br/>
+    <div id="logBox">로그가 여기에 표시됩니다...</div>
+  </div>
+
+</div>
+
+<!-- ============================================================ -->
+<!-- 탭 2: 시뮬레이션 결과                                       -->
+<!-- ============================================================ -->
+<div id="tab-res" class="tab-panel">
+
+  <div class="card">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
+      <h2>시뮬레이션 이력</h2>
+      <button class="btn btn-save" style="padding:7px 18px; font-size:0.85rem;"
+              onclick="loadSimulations()">↻ 새로고침</button>
+    </div>
+    <div style="overflow-x:auto;">
+      <table class="sim-table">
+        <thead>
+          <tr>
+            <th>#</th><th>상태</th><th>시작 시각</th><th>모델</th>
+            <th>에폭</th><th>LR</th><th>r/α</th>
+            <th>손실</th><th>소요(초)</th><th>스텝</th>
+          </tr>
+        </thead>
+        <tbody id="simTbody">
+          <tr><td colspan="10" class="empty-msg">데이터 없음</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="card" id="chartCard" style="display:none;">
+    <h2 id="chartTitle">손실 그래프</h2>
+    <div id="chartWrap">
+      <canvas id="lossChart"></canvas>
+    </div>
+  </div>
+
+</div>
+
+<script>
+'use strict';
+
+// ── 탭 전환 ──────────────────────────────────────
+function switchTab(name) {
+  var panels  = document.querySelectorAll('.tab-panel');
+  var buttons = document.querySelectorAll('.tab-btn');
+  for (var i = 0; i < panels.length; i++)  { panels[i].classList.remove('active'); }
+  for (var i = 0; i < buttons.length; i++) { buttons[i].classList.remove('active'); }
+
+  document.getElementById('tab-' + name).classList.add('active');
+  if (name === 'cfg') { buttons[0].classList.add('active'); }
+  else                { buttons[1].classList.add('active'); loadSimulations(); }
+}
+
+// ── 설정 로드 ────────────────────────────────────
+async function loadConfig() {
+  try {
+    var res  = await fetch('/api/config');
+    var json = await res.json();
+    if (!json.success) { alert('설정 로드 실패: ' + json.message); return; }
+
+    var data = json.data;
+    var keys = Object.keys(data);
+    for (var i = 0; i < keys.length; i++) {
+      var el = document.getElementById('cfg-' + keys[i]);
+      if (el) { el.value = data[keys[i]]; }
+    }
+  } catch (e) {
+    console.error('loadConfig 오류:', e);
+  }
+}
+
+// ── 설정 저장 ────────────────────────────────────
+async function saveConfig() {
+  var cfgKeys = [
+    'dataset_repo','base_model','output_base_dir',
+    'max_train_samples','max_eval_samples','max_seq_length',
+    'per_device_train_batch_size','per_device_eval_batch_size',
+    'grad_accum','num_epochs','learning_rate',
+    'logging_steps','save_steps','lora_r','lora_alpha','lora_dropout'
+  ];
+  var body = {};
+  for (var i = 0; i < cfgKeys.length; i++) {
+    var el = document.getElementById('cfg-' + cfgKeys[i]);
+    if (el) { body[cfgKeys[i]] = el.value.trim(); }
+  }
+
+  try {
+    var res  = await fetch('/api/config', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+    var json = await res.json();
+    if (json.success) { alert('설정이 .env에 저장되었습니다.'); }
+    else              { alert('저장 실패: ' + json.message); }
+  } catch (e) {
+    alert('오류: ' + e.message);
+  }
+}
+
+// ── 학습 시작 ────────────────────────────────────
+async function startTraining() {
+  try {
+    var res  = await fetch('/api/run/start', { method: 'POST' });
+    var json = await res.json();
+    if (!json.success) { alert('학습 시작 실패: ' + json.message); return; }
+
+    appendLog('▶ 학습 시작됨');
+    startPolling();
+  } catch (e) {
+    alert('오류: ' + e.message);
+  }
+}
+
+// ── 로그 폴링 ────────────────────────────────────
+var pollTimer     = null;
+var logOffset     = 0;
+
+function startPolling() {
+  if (pollTimer) return;
+  logOffset = 0;
+  pollTimer = setInterval(pollStatus, 2000);
+  updateBadge(true);
+}
+
+function stopPolling() {
+  if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+  updateBadge(false);
+}
+
+async function pollStatus() {
+  try {
+    var res  = await fetch('/api/run/status?offset=' + logOffset);
+    var json = await res.json();
+    if (!json.success) return;
+
+    var logs = json.logs;
+    for (var i = 0; i < logs.length; i++) {
+      appendLog(logs[i].msg);
+    }
+    logOffset = json.logCount;
+
+    if (!json.running && pollTimer) {
+      stopPolling();
+      appendLog('■ 학습 종료');
+    }
+  } catch (e) {
+    console.error('pollStatus 오류:', e);
+  }
+}
+
+function appendLog(text) {
+  var box = document.getElementById('logBox');
+  box.textContent += '\n' + text;
+  box.scrollTop = box.scrollHeight;
+}
+
+function updateBadge(running) {
+  var badge = document.getElementById('runBadge');
+  if (running) {
+    badge.textContent = '학습 중...';
+    badge.className   = 'status-badge status-running';
+  } else {
+    badge.textContent = '대기 중';
+    badge.className   = 'status-badge status-idle';
+  }
+}
+
+// ── 시뮬레이션 이력 로드 ─────────────────────────
+async function loadSimulations() {
+  try {
+    var res  = await fetch('/api/simulations');
+    var json = await res.json();
+    if (!json.success) { alert('이력 조회 실패: ' + json.message); return; }
+
+    var tbody = document.getElementById('simTbody');
+    tbody.innerHTML = '';
+
+    var rows = json.data;
+    if (rows.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="10" class="empty-msg">데이터 없음</td></tr>';
+      return;
+    }
+
+    for (var i = 0; i < rows.length; i++) {
+      var r  = rows[i];
+      var tr = document.createElement('tr');
+      tr.dataset.seq = r.sim_seq;
+      tr.onclick     = function() { selectSim(this.dataset.seq); };
+
+      var statusCls = 's-' + (r.status || 'running');
+      var ts        = r.run_timestamp ? new Date(r.run_timestamp).toLocaleString('ko-KR') : '-';
+      var modelShort = r.model_name   ? r.model_name.split('/').pop() : '-';
+      var lr        = r.learning_rate !== null ? Number(r.learning_rate).toExponential(1) : '-';
+      var loraRA    = (r.lora_r !== null && r.lora_alpha !== null) ? r.lora_r + '/' + r.lora_alpha : '-';
+      var loss      = r.train_loss  !== null ? Number(r.train_loss).toFixed(4)  : '-';
+      var rt        = r.runtime_sec !== null ? Number(r.runtime_sec).toFixed(0) : '-';
+      var step      = r.global_step !== null ? r.global_step : '-';
+
+      tr.innerHTML =
+        '<td>' + r.sim_seq + '</td>' +
+        '<td class="' + statusCls + '">' + r.status + '</td>' +
+        '<td>' + ts + '</td>' +
+        '<td>' + modelShort + '</td>' +
+        '<td>' + (r.num_epochs || '-') + '</td>' +
+        '<td>' + lr + '</td>' +
+        '<td>' + loraRA + '</td>' +
+        '<td>' + loss + '</td>' +
+        '<td>' + rt + '</td>' +
+        '<td>' + step + '</td>';
+
+      tbody.appendChild(tr);
+    }
+  } catch (e) {
+    alert('오류: ' + e.message);
+  }
+}
+
+// ── 손실 그래프 표시 ─────────────────────────────
+var lossChartInst = null;
+
+async function selectSim(seq) {
+  try {
+    var res  = await fetch('/api/simulations/' + seq + '/logs');
+    var json = await res.json();
+    if (!json.success) { alert('로그 조회 실패: ' + json.message); return; }
+
+    var logs = json.data;
+    document.getElementById('chartCard').style.display = 'block';
+    document.getElementById('chartTitle').textContent  = '시뮬레이션 #' + seq + ' 손실 추이';
+
+    var steps  = [];
+    var losses = [];
+    for (var i = 0; i < logs.length; i++) {
+      steps.push(logs[i].step);
+      losses.push(logs[i].loss);
+    }
+
+    if (lossChartInst) { lossChartInst.destroy(); }
+
+    var ctx = document.getElementById('lossChart').getContext('2d');
+    lossChartInst = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels:   steps,
+        datasets: [{
+          label:           '학습 손실 (Loss)',
+          data:            losses,
+          borderColor:     '#5c6bc0',
+          backgroundColor: 'rgba(92,107,192,.1)',
+          borderWidth:     2,
+          pointRadius:     3,
+          tension:         0.3,
+          fill:            true,
+        }]
+      },
+      options: {
+        responsive:          true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { position: 'top' },
+          title:  { display: false },
+        },
+        scales: {
+          x: { title: { display: true, text: '스텝 (Step)' } },
+          y: { title: { display: true, text: '손실 (Loss)' } },
+        }
+      }
+    });
+
+    document.getElementById('chartCard').scrollIntoView({ behavior: 'smooth' });
+  } catch (e) {
+    alert('그래프 로드 오류: ' + e.message);
+  }
+}
+
+// ── 초기화 ───────────────────────────────────────
+(async function init() {
+  await loadConfig();
+
+  // 서버 시작 시 이미 실행 중인 학습이 있으면 폴링 재개
+  try {
+    var res  = await fetch('/api/run/status?offset=0');
+    var json = await res.json();
+    if (json.running) { startPolling(); }
+  } catch (e) {}
+})();
+</script>
+</body>
+</html>
