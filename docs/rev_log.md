@@ -129,7 +129,48 @@
 
 ---
 
+## 2026-06-11 (추가 4)
+
+### ★03_데이터병합 및 저장_멀티모달데이터_Gemma3.ipynb
+
+**변경 내용:** `.env` 전체 통합, 하드코딩 토큰 제거
+
+| 셀 ID | 변경 내용 |
+|-------|-----------|
+| `51267a36` | 하드코딩 토큰 제거 → `load_dotenv()` + `os.getenv("HF_TOKEN", "YOUR_HF_TOKEN")` + `login(hf_token)` |
+| `d71acf41` | 경로 5개 전부 `.env` 전환 (`BASE_MODEL`, `ADAPTER_PATH`, `MERGED_LOCAL_DIR`, `MERGED_MODEL_REPO`, `TEST_IMAGE_PATH`) |
+| `c433b74f` | 베이스 모델·프로세서 로드에 `token=hf_token` 추가 |
+
+**신규 `.env` 항목:** `ADAPTER_PATH`, `MERGED_LOCAL_DIR`, `MERGED_MODEL_REPO`, `TEST_IMAGE_PATH`
+
+### codeset/docs/★03_데이터병합 및 저장_멀티모달데이터_Gemma3.md (신규 생성)
+
+**변경 내용:** 노트북 모델 정의서 작성 (셀 구성, .env 설정, 처리 흐름, 알려진 경고)
+
+---
+
 ## 2026-06-11 (추가 3 — SimulApp)
+
+### ★02. 파인튜닝_멀티모달데이터_Gemma3.ipynb (DB 연동 적용)
+
+**변경 내용:** .py와 동일한 DB 연동 구조를 노트북에도 반영
+
+| 셀 ID | 변경 내용 |
+|-------|-----------|
+| `f1fa00ac` | `mysql.connector`, `TrainerCallback`, `matplotlib.font_manager`, `gridspec` 임포트 추가 |
+| `ea23b15e` (신규) | `setKoreanFont()` — matplotlib 한글 폰트 자동 설정 (맑은 고딕 우선) |
+| `053d9fd6` | 하드코딩 토큰 제거 → `load_dotenv()` + `os.getenv("HF_TOKEN")` 만 유지 |
+| `34708266` | 전체 `.env` 설정 전환 (DB_CFG, TENSORBOARD_DIR, 모든 LoRA·학습 하이퍼파라미터) |
+| `eea23c1a` (신규) | `getDbConn`, `getNextSimSeq`, `insertRunStart`, `updateRunEnd`, `DbLogCallback` + `SIM_SEQ` 발급 |
+| `3fcbdab0` | `build_messages` → `buildMessages` (camelCase), 독스트링 추가 |
+| `35954667` | `collate_fn` — `buildMessages` 호출, `for i in range(0, len())` 루프 통일 |
+| `8cfdace8` | LoRA r/α/dropout → 변수 참조, `report_to='tensorboard'`, `logging_dir=TENSORBOARD_DIR`, `DbLogCallback` 추가 |
+| `88c1d0dd` | `train_result = trainer.train()` + `updateRunEnd(SIM_SEQ, ...)` |
+| `b7a785d3` | 그래프 한글 레이블 적용, 변수명 camelCase 통일, LoRA r/α 동적 표시 |
+| `20a38b0d` | CSV 저장 → DB 조회 확인으로 교체 |
+| 삭제 | `5981f985`, `53b3eb10`, `1913f7f7`, `7ba914c8`, `52acc4cb`, `95fa7bb1`, `04353c5c` (중복·테스트·주석 셀) |
+
+---
 
 ### ★02. 파인튜닝_멀티모달데이터_Gemma3.py (DB 연동 재구축)
 
