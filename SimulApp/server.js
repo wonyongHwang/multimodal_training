@@ -27,6 +27,7 @@ const CODESET_DIR   = path.join(__dirname, '..', 'codeset');
 const ENV_PATH      = path.join(CODESET_DIR, '.env');
 const PY_SCRIPT     = path.join(CODESET_DIR, '★02. 파인튜닝_멀티모달데이터_Gemma3.py');
 const PY_MERGE      = path.join(CODESET_DIR, '★03. 데이터병합 및 저장_멀티모달데이터_Gemma3.py');
+const PY_GGUF       = path.join(CODESET_DIR, '★04. GGUF 모델 변환.py');
 const MODELS_DIR    = path.join(CODESET_DIR, 'models');
 
 // venv Python 탐색 (Windows 우선, 없으면 시스템 python3)
@@ -35,6 +36,14 @@ const VENV_PY_NIX  = path.join(__dirname, '..', '.venv', 'bin', 'python');
 let PYTHON_CMD = 'python3';
 if (fs.existsSync(VENV_PY_WIN))       { PYTHON_CMD = VENV_PY_WIN; }
 else if (fs.existsSync(VENV_PY_NIX))  { PYTHON_CMD = VENV_PY_NIX; }
+
+// GGUF 전용 venv (.venvgguf) 탐색
+const VENVGGUF_PY_WIN = path.join(__dirname, '..', '.venvgguf', 'Scripts', 'python.exe');
+const VENVGGUF_PY_NIX = path.join(__dirname, '..', '.venvgguf', 'bin', 'python');
+let PYTHON_GGUF_CMD = PYTHON_CMD;
+if (fs.existsSync(VENVGGUF_PY_WIN))      { PYTHON_GGUF_CMD = VENVGGUF_PY_WIN; }
+else if (fs.existsSync(VENVGGUF_PY_NIX)) { PYTHON_GGUF_CMD = VENVGGUF_PY_NIX; }
+console.log(`GGUF Python 실행 경로: ${PYTHON_GGUF_CMD}`);
 
 console.log(`Python 실행 경로: ${PYTHON_CMD}`);
 
@@ -123,6 +132,9 @@ let trainLogs     = [];
 
 let mergeProc     = null;
 let mergeLogs     = [];
+
+let ggufProc      = null;
+let ggufLogs      = [];
 
 // ============================================================
 // Express 앱
@@ -466,6 +478,125 @@ app.get('/api/merge/status', (req, res) => {
     running:  mergeProc !== null,
     logCount: mergeLogs.length,
     logs:     mergeLogs.slice(offset),
+  });
+});
+
+// ────────────────────────────────────────────────
+// GET /api/gguf/config — GGUF 설정 조회
+// ────────────────────────────────────────────────
+
+app.get('/api/gguf/config', (req, res) => {
+  try {
+    const envVals = parseEnv(ENV_PATH);
+    const cfg = {
+      source_repo:     envVals['GGUF_SOURCE_REPO'] || '',
+      local_dir:       envVals['GGUF_LOCAL_DIR']   || '',
+      outfile:         envVals['GGUF_OUTFILE']      || 'model.gguf',
+      outtype:         envVals['GGUF_OUTTYPE']      || 'f16',
+      hf_repo:         envVals['GGUF_HF_REPO']      || '',
+      llamacpp_dir:    envVals['GGUF_LLAMACPP_DIR'] || './llama.cpp',
+    };
+    res.json({ success: true, data: cfg });
+  } catch (e) {
+    res.status(500).json({ success: false, message: e.message });
+  }
+});
+
+// ────────────────────────────────────────────────
+// POST /api/gguf/config — GGUF 설정 저장
+// ────────────────────────────────────────────────
+
+app.post('/api/gguf/config', (req, res) => {
+  try {
+    const body   = req.body || {};
+    const keyMap = {
+      source_repo:  'GGUF_SOURCE_REPO',
+      local_dir:    'GGUF_LOCAL_DIR',
+      outfile:      'GGUF_OUTFILE',
+      outtype:      'GGUF_OUTTYPE',
+      hf_repo:      'GGUF_HF_REPO',
+      llamacpp_dir: 'GGUF_LLAMACPP_DIR',
+    };
+    const updates  = {};
+    const bodyKeys = Object.keys(body);
+    for (let i = 0; i < bodyKeys.length; i++) {
+      const k = bodyKeys[i];
+      if (keyMap[k] !== undefined) {
+        updates[keyMap[k]] = body[k];
+      }
+    }
+    updateEnv(ENV_PATH, updates);
+    res.json({ success: true, message: '.env GGUF 설정 저장 완료' });
+  } catch (e) {
+    res.status(500).json({ success: false, message: e.message });
+  }
+});
+
+// ────────────────────────────────────────────────
+// POST /api/gguf/start — GGUF 변환 스크립트 실행
+// ────────────────────────────────────────────────
+
+app.post('/api/gguf/start', (req, res) => {
+  if (ggufProc !== null) {
+    return res.status(409).json({ success: false, message: '이미 GGUF 변환이 실행 중입니다.' });
+  }
+  if (currentProc !== null) {
+    return res.status(409).json({ success: false, message: '파인튜닝이 실행 중입니다. 완료 후 진행하세요.' });
+  }
+  if (mergeProc !== null) {
+    return res.status(409).json({ success: false, message: '모델 병합이 실행 중입니다. 완료 후 진행하세요.' });
+  }
+
+  ggufLogs = [];
+
+  try {
+    ggufProc = spawn(PYTHON_GGUF_CMD, [PY_GGUF], {
+      cwd:   CODESET_DIR,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+
+    ggufProc.stdout.on('data', (data) => {
+      const lines = data.toString().split('\n');
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i].trim();
+        if (!line) continue;
+        ggufLogs.push({ ts: new Date().toISOString(), msg: line });
+        console.log('[GGUF]', line);
+      }
+    });
+
+    ggufProc.stderr.on('data', (data) => {
+      const lines = data.toString().split('\n');
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i].trim();
+        if (!line) continue;
+        ggufLogs.push({ ts: new Date().toISOString(), msg: '[ERR] ' + line });
+      }
+    });
+
+    ggufProc.on('close', (code) => {
+      console.log(`[GGUF] 프로세스 종료 (code=${code})`);
+      ggufProc = null;
+    });
+
+    res.json({ success: true, message: 'GGUF 변환 시작됨' });
+  } catch (e) {
+    ggufProc = null;
+    res.status(500).json({ success: false, message: e.message });
+  }
+});
+
+// ────────────────────────────────────────────────
+// GET /api/gguf/status — GGUF 변환 상태·로그
+// ────────────────────────────────────────────────
+
+app.get('/api/gguf/status', (req, res) => {
+  const offset = parseInt(req.query.offset || '0');
+  res.json({
+    success:  true,
+    running:  ggufProc !== null,
+    logCount: ggufLogs.length,
+    logs:     ggufLogs.slice(offset),
   });
 });
 
