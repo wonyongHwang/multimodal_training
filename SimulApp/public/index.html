@@ -147,6 +147,7 @@
   <button class="tab-btn active" onclick="switchTab('cfg')">⚙ 학습 설정</button>
   <button class="tab-btn"        onclick="switchTab('res')">📊 시뮬레이션 결과</button>
   <button class="tab-btn"        onclick="switchTab('mrg')">🔀 모델 병합</button>
+  <button class="tab-btn"        onclick="switchTab('gguf')">📦 GGUF 변환</button>
 </div>
 
 <!-- ============================================================ -->
@@ -505,6 +506,94 @@
 
 </div>
 
+<!-- ============================================================ -->
+<!-- 탭 4: GGUF 변환                                             -->
+<!-- ============================================================ -->
+<div id="tab-gguf" class="tab-panel">
+
+  <div class="card">
+    <h2>GGUF 변환 설정</h2>
+    <div class="form-grid">
+
+      <div class="form-group">
+        <label class="field-label">
+          GGUF_SOURCE_REPO
+          <span class="tip-icon">?<span class="tip-box">변환할 병합 모델의 HuggingFace Hub 레포입니다.<br>★03 모델 병합 탭의 MERGED_MODEL_REPO와 동일한 값을 사용합니다.<br>예) hyokwan/modal_merge_test</span></span>
+        </label>
+        <input id="gguf-source_repo" type="text" placeholder="yourHFID/merged_model" />
+      </div>
+
+      <div class="form-group">
+        <label class="field-label">
+          GGUF_LOCAL_DIR <span class="default-val">(빈값=자동 생성)</span>
+          <span class="tip-icon">?<span class="tip-box">HF에서 다운로드한 모델을 저장할 로컬 경로입니다.<br>비워두면 gguf_{모델명}_{날짜} 형식으로 자동 생성됩니다.</span></span>
+        </label>
+        <input id="gguf-local_dir" type="text" placeholder="gguf_{모델명}_{날짜} 자동 생성" />
+      </div>
+
+      <div class="form-group">
+        <label class="field-label">
+          GGUF_OUTFILE
+          <span class="tip-icon">?<span class="tip-box">변환된 GGUF 파일명입니다.<br>예) model.gguf / gemma3_4b_merged.gguf</span></span>
+        </label>
+        <input id="gguf-outfile" type="text" placeholder="model.gguf" />
+      </div>
+
+      <div class="form-group">
+        <label class="field-label">
+          GGUF_OUTTYPE
+          <span class="tip-icon">?<span class="tip-box">GGUF 출력 정밀도입니다.<br>f16: fp16 (호환성 최고, 권장) / bf16: bfloat16 / f32: fp32 / q8_0: 8-bit 양자화 / auto: 원본 dtype 자동 감지</span></span>
+        </label>
+        <select id="gguf-outtype" style="padding:8px 10px; border:1px solid #ddd; border-radius:6px; font-size:0.92rem;">
+          <option value="f16">f16 (권장)</option>
+          <option value="bf16">bf16</option>
+          <option value="f32">f32</option>
+          <option value="q8_0">q8_0</option>
+          <option value="auto">auto</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label class="field-label">
+          GGUF_HF_REPO
+          <span class="tip-icon">?<span class="tip-box">변환된 GGUF 파일을 업로드할 HuggingFace Hub 레포입니다.<br>없으면 자동으로 생성됩니다.<br>예) hyokwan/modal_merge_test_gguf</span></span>
+        </label>
+        <input id="gguf-hf_repo" type="text" placeholder="yourHFID/model_gguf" />
+      </div>
+
+      <div class="form-group">
+        <label class="field-label">
+          GGUF_LLAMACPP_DIR
+          <span class="tip-icon">?<span class="tip-box">llama.cpp가 위치한 디렉터리 경로입니다.<br>convert_hf_to_gguf.py 스크립트가 이 경로 아래에 있어야 합니다.<br>기본: ./llama.cpp</span></span>
+        </label>
+        <input id="gguf-llamacpp_dir" type="text" placeholder="./llama.cpp" />
+      </div>
+
+    </div>
+  </div>
+
+  <div class="card">
+    <div style="display:flex; align-items:center; gap:16px; margin-bottom:14px;">
+      <h2 style="margin:0;">변환 실행</h2>
+      <span id="ggufBadge" class="status-badge status-idle">대기 중</span>
+    </div>
+    <p style="font-size:0.82rem; color:#888; margin-bottom:12px;">
+      ① 설정 저장 → ② 변환 시작 순서로 실행하세요. 파인튜닝·병합 실행 중에는 변환이 차단됩니다.<br>
+      변환 순서: HF 다운로드 → GGUF 변환 → HF 업로드
+    </p>
+    <div class="btn-row">
+      <button class="btn btn-save"  onclick="saveGgufConfig()">설정 저장 (.env)</button>
+      <button class="btn btn-start" onclick="startGguf()">📦 변환 시작</button>
+    </div>
+    <br/>
+    <div id="ggufLogBox"
+         style="background:#1a1a2e; color:#b2dfdb; font-family:monospace; font-size:0.8rem;
+                padding:12px; border-radius:8px; height:320px; overflow-y:auto; white-space:pre-wrap;">
+GGUF 변환 로그가 여기에 표시됩니다...</div>
+  </div>
+
+</div>
+
 <script>
 'use strict';
 
@@ -516,9 +605,10 @@ function switchTab(name) {
   for (var i = 0; i < buttons.length; i++) { buttons[i].classList.remove('active'); }
 
   document.getElementById('tab-' + name).classList.add('active');
-  if      (name === 'cfg') { buttons[0].classList.add('active'); }
-  else if (name === 'res') { buttons[1].classList.add('active'); loadSimulations(); }
-  else if (name === 'mrg') { buttons[2].classList.add('active'); loadMergeConfig(); }
+  if      (name === 'cfg')  { buttons[0].classList.add('active'); }
+  else if (name === 'res')  { buttons[1].classList.add('active'); loadSimulations(); }
+  else if (name === 'mrg')  { buttons[2].classList.add('active'); loadMergeConfig(); }
+  else if (name === 'gguf') { buttons[3].classList.add('active'); loadGgufConfig(); }
 }
 
 // ── 설정 로드 ────────────────────────────────────
@@ -819,6 +909,94 @@ function updateMergeBadge(running) {
   else         { badge.textContent = '대기 중';   badge.className = 'status-badge status-idle'; }
 }
 
+// ── GGUF 설정 로드 ───────────────────────────────
+async function loadGgufConfig() {
+  try {
+    var res  = await fetch('/api/gguf/config');
+    var json = await res.json();
+    if (!json.success) return;
+    var data = json.data;
+    var keys = Object.keys(data);
+    for (var i = 0; i < keys.length; i++) {
+      var el = document.getElementById('gguf-' + keys[i]);
+      if (el) { el.value = data[keys[i]]; }
+    }
+  } catch (e) { console.error('loadGgufConfig 오류:', e); }
+}
+
+// ── GGUF 설정 저장 ───────────────────────────────
+async function saveGgufConfig() {
+  var body = {
+    source_repo:  document.getElementById('gguf-source_repo').value.trim(),
+    local_dir:    document.getElementById('gguf-local_dir').value.trim(),
+    outfile:      document.getElementById('gguf-outfile').value.trim(),
+    outtype:      document.getElementById('gguf-outtype').value,
+    hf_repo:      document.getElementById('gguf-hf_repo').value.trim(),
+    llamacpp_dir: document.getElementById('gguf-llamacpp_dir').value.trim(),
+  };
+  try {
+    var res  = await fetch('/api/gguf/config', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+    var json = await res.json();
+    if (json.success) { alert('GGUF 설정이 .env에 저장되었습니다.'); }
+    else              { alert('저장 실패: ' + json.message); }
+  } catch (e) { alert('오류: ' + e.message); }
+}
+
+// ── GGUF 변환 시작 ───────────────────────────────
+async function startGguf() {
+  var sourceRepo = document.getElementById('gguf-source_repo').value.trim();
+  if (!sourceRepo) { alert('GGUF_SOURCE_REPO를 입력하세요.'); return; }
+  var hfRepo = document.getElementById('gguf-hf_repo').value.trim();
+  if (!hfRepo) { alert('GGUF_HF_REPO (업로드 레포)를 입력하세요.'); return; }
+  try {
+    var res  = await fetch('/api/gguf/start', { method: 'POST' });
+    var json = await res.json();
+    if (!json.success) { alert('변환 시작 실패: ' + json.message); return; }
+    appendGgufLog('📦 GGUF 변환 시작됨');
+    startGgufPolling();
+  } catch (e) { alert('오류: ' + e.message); }
+}
+
+// ── GGUF 로그 폴링 ───────────────────────────────
+var ggufPollTimer = null;
+var ggufLogOffset = 0;
+
+function startGgufPolling() {
+  if (ggufPollTimer) return;
+  ggufLogOffset = 0;
+  ggufPollTimer = setInterval(pollGgufStatus, 2000);
+  updateGgufBadge(true);
+}
+
+function stopGgufPolling() {
+  if (ggufPollTimer) { clearInterval(ggufPollTimer); ggufPollTimer = null; }
+  updateGgufBadge(false);
+}
+
+async function pollGgufStatus() {
+  try {
+    var res  = await fetch('/api/gguf/status?offset=' + ggufLogOffset);
+    var json = await res.json();
+    if (!json.success) return;
+    var logs = json.logs;
+    for (var i = 0; i < logs.length; i++) { appendGgufLog(logs[i].msg); }
+    ggufLogOffset = json.logCount;
+    if (!json.running && ggufPollTimer) { stopGgufPolling(); appendGgufLog('■ GGUF 변환 종료'); }
+  } catch (e) { console.error('pollGgufStatus 오류:', e); }
+}
+
+function appendGgufLog(text) {
+  var box = document.getElementById('ggufLogBox');
+  box.textContent += '\n' + text;
+  box.scrollTop = box.scrollHeight;
+}
+
+function updateGgufBadge(running) {
+  var badge = document.getElementById('ggufBadge');
+  if (running) { badge.textContent = '변환 중...'; badge.className = 'status-badge status-running'; }
+  else         { badge.textContent = '대기 중';   badge.className = 'status-badge status-idle'; }
+}
+
 // ── 초기화 ───────────────────────────────────────
 (async function init() {
   await loadConfig();
@@ -831,6 +1009,11 @@ function updateMergeBadge(running) {
     var r2 = await fetch('/api/merge/status?offset=0');
     var j2 = await r2.json();
     if (j2.running) { startMergePolling(); }
+  } catch (e) {}
+  try {
+    var r3 = await fetch('/api/gguf/status?offset=0');
+    var j3 = await r3.json();
+    if (j3.running) { startGgufPolling(); }
   } catch (e) {}
 })();
 </script>
