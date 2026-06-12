@@ -413,7 +413,14 @@ def main():
     insertRunStart(simSeq, cfg)
 
     # ===== HuggingFace 로그인 =====
-    huggingface_hub.login(cfg['hf_token'])
+    if cfg['hf_token'] and cfg['hf_token'] not in ('YOUR_HF_TOKEN', ''):
+        try:
+            huggingface_hub.login(cfg['hf_token'])
+        except Exception as e:
+            print(f"[경고] HuggingFace 로그인 실패: {e}")
+            print("[경고] .env의 HF_TOKEN을 확인하세요. 공개 데이터셋만 접근 가능합니다.")
+    else:
+        print("[경고] HF_TOKEN이 설정되지 않았습니다. 공개 데이터셋만 접근 가능합니다.")
 
     # ===== 데이터셋 로드 =====
     ds       = load_dataset(cfg['dataset_repo'])

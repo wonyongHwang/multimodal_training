@@ -22,10 +22,12 @@ require('dotenv').config({ path: path.join(__dirname, '..', 'codeset', '.env') }
 // 설정
 // ============================================================
 
-const PORT       = 3000;
-const CODESET_DIR = path.join(__dirname, '..', 'codeset');
-const ENV_PATH   = path.join(CODESET_DIR, '.env');
-const PY_SCRIPT  = path.join(CODESET_DIR, '★02. 파인튜닝_멀티모달데이터_Gemma3.py');
+const PORT          = 3000;
+const CODESET_DIR   = path.join(__dirname, '..', 'codeset');
+const ENV_PATH      = path.join(CODESET_DIR, '.env');
+const PY_SCRIPT     = path.join(CODESET_DIR, '★02. 파인튜닝_멀티모달데이터_Gemma3.py');
+const PY_MERGE      = path.join(CODESET_DIR, '★03. 데이터병합 및 저장_멀티모달데이터_Gemma3.py');
+const MODELS_DIR    = path.join(CODESET_DIR, 'models');
 
 // venv Python 탐색 (Windows 우선, 없으면 시스템 python3)
 const VENV_PY_WIN  = path.join(__dirname, '..', '.venv', 'Scripts', 'python.exe');
@@ -112,12 +114,15 @@ function updateEnv(filePath, updates) {
 }
 
 // ============================================================
-// 현재 실행 중인 프로세스 상태 추적
+// 프로세스 상태 추적 (파인튜닝 / 병합 각각 독립)
 // ============================================================
 
 let currentProc   = null;
 let currentSimSeq = null;
 let trainLogs     = [];
+
+let mergeProc     = null;
+let mergeLogs     = [];
 
 // ============================================================
 // Express 앱
@@ -326,6 +331,142 @@ app.get('/api/simulations/:seq/logs', async (req, res) => {
   } catch (e) {
     res.status(500).json({ success: false, message: e.message });
   }
+});
+
+// ────────────────────────────────────────────────
+// GET /api/models — models/ 폴더 내 어댑터 목록
+// ────────────────────────────────────────────────
+
+app.get('/api/models', (req, res) => {
+  try {
+    if (!fs.existsSync(MODELS_DIR)) {
+      return res.json({ success: true, data: [] });
+    }
+    const entries = fs.readdirSync(MODELS_DIR, { withFileTypes: true });
+    const dirs    = [];
+    for (let i = 0; i < entries.length; i++) {
+      if (entries[i].isDirectory()) {
+        dirs.push(entries[i].name);
+      }
+    }
+    res.json({ success: true, data: dirs });
+  } catch (e) {
+    res.status(500).json({ success: false, message: e.message });
+  }
+});
+
+// ────────────────────────────────────────────────
+// GET /api/merge/config — 병합 설정 조회
+// ────────────────────────────────────────────────
+
+app.get('/api/merge/config', (req, res) => {
+  try {
+    const envVals = parseEnv(ENV_PATH);
+    const cfg = {
+      base_model:        envVals['BASE_MODEL']        || 'google/gemma-3-4b-it',
+      adapter_path:      envVals['ADAPTER_PATH']      || '',
+      merged_local_dir:  envVals['MERGED_LOCAL_DIR']  || './models/gemma3_multimodal_merged',
+      merged_model_repo: envVals['MERGED_MODEL_REPO'] || '',
+      test_image_path:   envVals['TEST_IMAGE_PATH']   || '',
+    };
+    res.json({ success: true, data: cfg });
+  } catch (e) {
+    res.status(500).json({ success: false, message: e.message });
+  }
+});
+
+// ────────────────────────────────────────────────
+// POST /api/merge/config — 병합 설정 저장
+// ────────────────────────────────────────────────
+
+app.post('/api/merge/config', (req, res) => {
+  try {
+    const body   = req.body || {};
+    const keyMap = {
+      base_model:        'BASE_MODEL',
+      adapter_path:      'ADAPTER_PATH',
+      merged_local_dir:  'MERGED_LOCAL_DIR',
+      merged_model_repo: 'MERGED_MODEL_REPO',
+      test_image_path:   'TEST_IMAGE_PATH',
+    };
+    const updates  = {};
+    const bodyKeys = Object.keys(body);
+    for (let i = 0; i < bodyKeys.length; i++) {
+      const k = bodyKeys[i];
+      if (keyMap[k] !== undefined) {
+        updates[keyMap[k]] = body[k];
+      }
+    }
+    updateEnv(ENV_PATH, updates);
+    res.json({ success: true, message: '.env 병합 설정 저장 완료' });
+  } catch (e) {
+    res.status(500).json({ success: false, message: e.message });
+  }
+});
+
+// ────────────────────────────────────────────────
+// POST /api/merge/start — 병합 스크립트 실행
+// ────────────────────────────────────────────────
+
+app.post('/api/merge/start', (req, res) => {
+  if (mergeProc !== null) {
+    return res.status(409).json({ success: false, message: '이미 병합이 실행 중입니다.' });
+  }
+  if (currentProc !== null) {
+    return res.status(409).json({ success: false, message: '파인튜닝이 실행 중입니다. 완료 후 병합하세요.' });
+  }
+
+  mergeLogs = [];
+
+  try {
+    mergeProc = spawn(PYTHON_CMD, [PY_MERGE], {
+      cwd:   CODESET_DIR,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+
+    mergeProc.stdout.on('data', (data) => {
+      const lines = data.toString().split('\n');
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i].trim();
+        if (!line) continue;
+        mergeLogs.push({ ts: new Date().toISOString(), msg: line });
+        console.log('[MERGE]', line);
+      }
+    });
+
+    mergeProc.stderr.on('data', (data) => {
+      const lines = data.toString().split('\n');
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i].trim();
+        if (!line) continue;
+        mergeLogs.push({ ts: new Date().toISOString(), msg: '[ERR] ' + line });
+      }
+    });
+
+    mergeProc.on('close', (code) => {
+      console.log(`[MERGE] 프로세스 종료 (code=${code})`);
+      mergeProc = null;
+    });
+
+    res.json({ success: true, message: '병합 시작됨' });
+  } catch (e) {
+    mergeProc = null;
+    res.status(500).json({ success: false, message: e.message });
+  }
+});
+
+// ────────────────────────────────────────────────
+// GET /api/merge/status — 병합 실행 상태·로그
+// ────────────────────────────────────────────────
+
+app.get('/api/merge/status', (req, res) => {
+  const offset = parseInt(req.query.offset || '0');
+  res.json({
+    success:  true,
+    running:  mergeProc !== null,
+    logCount: mergeLogs.length,
+    logs:     mergeLogs.slice(offset),
+  });
 });
 
 // ============================================================

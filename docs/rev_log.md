@@ -1,5 +1,26 @@
 # 수정 로그
 
+## 2026-06-12
+
+### SimulApp/public/index.html (UI 개선)
+
+**변경 내용:** ⚙ 학습 설정 탭에 데이터셋 포맷 안내 카드 및 하이퍼파라미터 설명 툴팁 추가
+
+| 추가 항목 | 내용 |
+|-----------|------|
+| **📋 필수 데이터셋 포맷 카드** | modality / image / instruction / input / output / source / label 7개 컬럼에 대한 설명 표(타입, 필수 여부, 예시 값) — 파인튜닝 전 데이터 구조 확인 목적 |
+| **ℹ 툴팁 (모든 파라미터)** | 각 하이퍼파라미터 레이블 옆 `?` 아이콘 — 마우스오버 시 한국어 설명 팝업 |
+
+**툴팁 적용 파라미터:**
+- 학습 하이퍼파라미터: `MAX_SEQ_LENGTH`, `TRAIN BATCH SIZE`, `EVAL BATCH SIZE`, `GRAD_ACCUM`, `NUM_EPOCHS`, `LEARNING_RATE`, `LOGGING_STEPS`, `SAVE_STEPS`
+- LoRA 설정: `LORA_R`, `LORA_ALPHA`, `LORA_DROPOUT`
+- 데이터/모델: `DATASET_REPO`, `BASE_MODEL`, `OUTPUT_BASE_DIR`, `MAX_TRAIN/EVAL_SAMPLES`
+- 병합 탭: `BASE_MODEL`, `ADAPTER_PATH`, `MERGED_LOCAL_DIR`, `MERGED_MODEL_REPO`, `TEST_IMAGE_PATH`
+
+**구현 방식:** CSS only (JS 없음) — `.tip-icon:hover .tip-box { display: block }` + `position: absolute` 팝업
+
+---
+
 ## 2026-06-03
 
 ### ★01. 데이터 준비_멀티모달데이터_Gemma3_OCR.ipynb
@@ -126,6 +147,32 @@
 | `main()` | 전체 학습 파이프라인 (데이터 로드→학습→시각화→DB저장→모델저장) |
 
 **실행:** `python "★02. 파인튜닝_멀티모달데이터_Gemma3.py"`
+
+---
+
+## 2026-06-11 (추가 5)
+
+### ★03. 데이터병합 및 저장_멀티모달데이터_Gemma3.py (신규 생성)
+
+**변경 내용:** 노트북을 독립 실행 가능한 `.py` 스크립트로 변환, SimulApp 병합 탭 연동
+
+| 함수 | 내용 |
+|------|------|
+| `loadConfig()` | 스크립트 위치 기준 `.env` 로드 |
+| `hfLogin(hfToken)` | 로그인 실패 시 경고만 출력 (크래시 없음) |
+| `loadBaseModel(cfg)` | 4-bit 양자화 베이스 모델 + 프로세서 로드 |
+| `mergeAdapter(baseModel, adapterPath)` | PeftModel → merge_and_unload() |
+| `saveMerged / uploadToHub` | 로컬 저장 + Hub 업로드 |
+| `inferFromHub` | 텍스트/이미지 추론 검증 |
+
+### SimulApp 🔀 모델 병합 탭 (신규)
+
+**변경 내용:** `server.js` API 추가 + `index.html` 탭 추가
+
+| 파일 | 변경 내용 |
+|------|-----------|
+| `SimulApp/server.js` | `MODELS_DIR`, `PY_MERGE` 경로 추가; `mergeProc`/`mergeLogs` 상태 추적; `/api/models`, `/api/merge/config GET·POST`, `/api/merge/start`, `/api/merge/status` API 신규 |
+| `SimulApp/public/index.html` | 🔀 모델 병합 탭 추가 — 어댑터 폴더 드롭다운, 설정 폼, 병합 실행·로그 폴링 |
 
 ---
 
