@@ -15,6 +15,9 @@ dist/
 .gemini
 .claude/
 
+# vscode
+.vscode/*
+
 # ipynb
 .ipynb_checkpoints/
 
@@ -30,6 +33,13 @@ dist/
 # 모델 파일
 *codeset/models/**
 codeset/models/**
+
+# GGUF 변환 폴더 (gguf_모델명_날짜 형식)
+codeset/gguf_*/
+*.gguf
+
+# llama.cpp (GGUF 변환 도구 — git clone으로 설치, 관리 제외)
+codeset/llama.cpp/
 # Log files
 *.log
 
