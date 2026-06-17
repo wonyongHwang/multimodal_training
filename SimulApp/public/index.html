@@ -134,6 +134,52 @@
     .s-failed    { color: #c62828; font-weight: 600; }
     #chartWrap { position: relative; height: 340px; }
     .empty-msg { text-align: center; color: #aaa; padding: 40px 0; font-size: 0.95rem; }
+
+    /* ── 가이드 배너 ── */
+    .guide-banner {
+      background: #fff8e1; border-left: 4px solid #f9a825;
+      border-radius: 10px; padding: 16px 22px; margin-bottom: 20px;
+    }
+    .guide-banner h3 {
+      font-size: 0.93rem; color: #e65100; margin-bottom: 12px;
+      display: flex; align-items: center; gap: 6px;
+    }
+    .guide-step {
+      display: flex; align-items: flex-start; gap: 10px;
+      margin-bottom: 9px; font-size: 0.85rem; color: #444; line-height: 1.5;
+    }
+    .guide-step:last-child { margin-bottom: 0; }
+    .step-num {
+      min-width: 22px; height: 22px; border-radius: 50%;
+      background: #f9a825; color: #fff; font-weight: 700; font-size: 0.73rem;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0; margin-top: 1px;
+    }
+    .step-key  { font-weight: 700; color: #1a1a2e; font-family: monospace; font-size: 0.88rem; }
+    .step-opt  { color: #aaa; font-size: 0.8rem; margin-left: 4px; }
+
+    /* ── 필수 / 선택 배지 ── */
+    .req-badge {
+      display: inline-block; padding: 1px 7px; border-radius: 4px;
+      background: #ffebee; color: #c62828; font-size: 0.7rem; font-weight: 700;
+      margin-left: 5px; vertical-align: middle; letter-spacing: 0.3px;
+    }
+    .opt-badge {
+      display: inline-block; padding: 1px 7px; border-radius: 4px;
+      background: #f5f5f5; color: #9e9e9e; font-size: 0.7rem; font-weight: 600;
+      margin-left: 5px; vertical-align: middle;
+    }
+
+    /* ── 필수 입력 필드 강조 ── */
+    .input-required {
+      border-left: 3px solid #ef9a9a !important;
+      background: #fffafa !important;
+    }
+    .input-required:focus {
+      border-color: #5c6bc0 !important;
+      border-left-color: #5c6bc0 !important;
+      background: #fff !important;
+    }
   </style>
 </head>
 <body>
@@ -154,6 +200,40 @@
 <!-- 탭 1: 학습 설정                                             -->
 <!-- ============================================================ -->
 <div id="tab-cfg" class="tab-panel active">
+
+  <!-- 가이드 배너 -->
+  <div class="guide-banner">
+    <h3>📋 학습 시작 전 확인사항</h3>
+    <div class="guide-step">
+      <span class="step-num" style="background:#7986cb;">i</span>
+      <div>
+        <span class="step-key">DATASET_REPO</span> —
+        기본 샘플 학습데이터가 설정되어 있습니다. <strong>그대로 사용해도 됩니다.</strong>
+        동일한 포맷의 본인 HuggingFace 데이터셋이 있다면 교체할 수 있습니다.
+      </div>
+    </div>
+    <div class="guide-step">
+      <span class="step-num">!</span>
+      <div>
+        <span class="step-key">MAX_TRAIN_SAMPLES</span> —
+        기본값은 전체 데이터를 학습합니다.
+        <strong>처음 테스트 시 <code>20</code> 을 입력</strong>하면 20건만 빠르게 학습해서 동작을 확인할 수 있습니다.
+      </div>
+    </div>
+    <div class="guide-step">
+      <span class="step-num" style="background:#66bb6a;">✓</span>
+      <div>
+        학습 결과는 서버 내 <code>./models</code> 폴더에 자동 저장됩니다.
+        완료 후 <strong>시뮬레이션 결과 탭</strong>에서 손실 그래프와 학습 이력을 확인하세요.
+      </div>
+    </div>
+    <div class="guide-step">
+      <span class="step-num" style="background:#66bb6a;">✓</span>
+      <div>
+        저장된 모델(어댑터)은 <strong>모델 병합 탭</strong>에서 [폴더 목록] 버튼으로 바로 선택할 수 있습니다.
+      </div>
+    </div>
+  </div>
 
   <!-- 데이터 포맷 안내 -->
   <div class="card">
@@ -230,7 +310,8 @@
       <div class="form-group">
         <label class="field-label">
           DATASET_REPO
-          <span class="tip-icon">?<span class="tip-box">HuggingFace Hub에 업로드된 데이터셋 ID입니다.<br>위 포맷(modality, image, instruction, input, output)을 반드시 갖춰야 파인튜닝이 가능합니다.<br>예) hyokwan/multi_modal_sample</span></span>
+          <span class="opt-badge">기본 제공</span>
+          <span class="tip-icon">?<span class="tip-box">HuggingFace Hub에 업로드된 데이터셋 ID입니다.<br>기본 샘플 데이터가 설정되어 있어 그대로 사용 가능합니다.<br>동일 포맷의 본인 데이터셋으로 교체할 수도 있습니다.<br>예) hyokwan/multi_modal_sample</span></span>
         </label>
         <input id="cfg-dataset_repo" type="text" placeholder="hyokwan/multi_modal_sample" />
       </div>
@@ -246,17 +327,20 @@
       <div class="form-group">
         <label class="field-label">
           OUTPUT_BASE_DIR
-          <span class="tip-icon">?<span class="tip-box">학습된 LoRA 어댑터가 저장될 루트 폴더입니다.<br>실제 저장 경로: OUTPUT_BASE_DIR/gemma3_multimodal_lora_YYYYMMDD_HHMMSS/</span></span>
+          <span class="opt-badge">변경 불필요</span>
+          <span class="tip-icon">?<span class="tip-box">학습된 LoRA 어댑터가 저장될 루트 폴더입니다.<br>결과는 ./models 아래에 자동 저장됩니다.<br>실제 경로: ./models/gemma3_multimodal_lora_날짜시간/</span></span>
         </label>
-        <input id="cfg-output_base_dir" type="text" placeholder="./models" />
+        <input id="cfg-output_base_dir" type="text" placeholder="./models" disabled
+               style="background:#f5f5f5; color:#aaa; cursor:not-allowed;" />
       </div>
 
       <div class="form-group">
         <label class="field-label">
-          MAX_TRAIN_SAMPLES <span class="default-val">(빈값=전체)</span>
-          <span class="tip-icon">?<span class="tip-box">학습에 사용할 최대 데이터 수입니다.<br>빠른 테스트 시 100~300 정도로 제한할 수 있습니다. 비워두면 전체 사용.</span></span>
+          MAX_TRAIN_SAMPLES
+          <span class="opt-badge">테스트 시 20 입력</span>
+          <span class="tip-icon">?<span class="tip-box">학습에 사용할 최대 데이터 수입니다.<br>⚡ 빠른 테스트: 20 입력 → 20건만 학습해서 동작 확인<br>본 학습 시: 비워두면 전체 데이터 사용</span></span>
         </label>
-        <input id="cfg-max_train_samples" type="text" placeholder="전체" />
+        <input id="cfg-max_train_samples" type="text" placeholder="비워두면 전체 학습 / 빠른 테스트: 20 입력" />
       </div>
 
       <div class="form-group">
@@ -441,6 +525,34 @@
 <!-- ============================================================ -->
 <div id="tab-mrg" class="tab-panel">
 
+  <!-- 가이드 배너 -->
+  <div class="guide-banner">
+    <h3>📋 병합 전 체크리스트 — 아래 2가지는 반드시 입력하세요</h3>
+    <div class="guide-step">
+      <span class="step-num">1</span>
+      <div>
+        <span class="step-key">ADAPTER_PATH</span> —
+        파인튜닝이 완료된 어댑터 폴더를 선택합니다.
+        <strong>[폴더 목록]</strong> 버튼을 클릭하면 <code>models/</code> 폴더에서 선택할 수 있습니다.
+      </div>
+    </div>
+    <div class="guide-step">
+      <span class="step-num">2</span>
+      <div>
+        <span class="step-key">MERGED_MODEL_REPO</span> —
+        병합 결과를 업로드할 <strong>본인의 HuggingFace Hub 레포 주소</strong>를 입력합니다.
+        (예: <code>yourHFID/my-gemma3-merged</code>)
+      </div>
+    </div>
+    <div class="guide-step">
+      <span class="step-num" style="background:#bdbdbd;">✓</span>
+      <div>
+        <span class="step-key">MERGED_LOCAL_DIR</span><span class="step-opt">선택 — 변경 불필요</span>
+        병합 결과가 로컬에 저장되는 경로입니다. 기본값 그대로 사용해도 됩니다.
+      </div>
+    </div>
+  </div>
+
   <div class="card">
     <h2>병합 설정</h2>
     <div class="form-grid">
@@ -448,6 +560,7 @@
       <div class="form-group">
         <label class="field-label">
           BASE_MODEL
+          <span class="opt-badge">변경 불필요</span>
           <span class="tip-icon">?<span class="tip-box">LoRA 어댑터를 병합할 베이스 모델 ID입니다.<br>파인튜닝 탭의 BASE_MODEL과 동일해야 합니다.<br>예) google/gemma-3-4b-it</span></span>
         </label>
         <input id="mrg-base_model" type="text" placeholder="google/gemma-3-4b-it" />
@@ -456,10 +569,12 @@
       <div class="form-group">
         <label class="field-label">
           ADAPTER_PATH
-          <span class="tip-icon">?<span class="tip-box">학습 완료 후 생성된 LoRA 어댑터 폴더 경로입니다.<br>아래 [폴더 목록] 버튼으로 models/ 폴더에서 선택할 수 있습니다.</span></span>
+          <span class="req-badge">★ 필수</span>
+          <span class="tip-icon">?<span class="tip-box">학습 완료 후 생성된 LoRA 어댑터 폴더 경로입니다.<br>[폴더 목록] 버튼으로 models/ 폴더에서 선택하세요.</span></span>
         </label>
         <div style="display:flex; gap:8px;">
-          <input id="mrg-adapter_path" type="text" placeholder="./models/gemma3_multimodal_lora_..." style="flex:1;" />
+          <input id="mrg-adapter_path" class="input-required" type="text"
+                 placeholder="[폴더 목록] 버튼으로 선택하거나 직접 입력" style="flex:1;" />
           <button class="btn btn-save" style="padding:8px 14px; font-size:0.82rem; white-space:nowrap;"
                   onclick="loadAdapterList()">폴더 목록</button>
         </div>
@@ -470,23 +585,27 @@
 
       <div class="form-group">
         <label class="field-label">
+          MERGED_MODEL_REPO
+          <span class="req-badge">★ 필수</span>
+          <span class="tip-icon">?<span class="tip-box">병합 모델을 업로드할 HuggingFace Hub 레포입니다.<br>형식: yourHFID/model_name<br>예) hyokwan/multi_modal_model_g3</span></span>
+        </label>
+        <input id="mrg-merged_model_repo" class="input-required" type="text"
+               placeholder="yourHFID/model_name  ← 본인 HF 아이디로 변경" />
+      </div>
+
+      <div class="form-group">
+        <label class="field-label">
           MERGED_LOCAL_DIR
-          <span class="tip-icon">?<span class="tip-box">병합된 전체 모델을 로컬에 저장할 경로입니다.<br>Hub 업로드 실패 시 이 경로에서 직접 로드할 수 있습니다.</span></span>
+          <span class="opt-badge">변경 불필요</span>
+          <span class="tip-icon">?<span class="tip-box">병합된 전체 모델을 로컬에 저장할 경로입니다.<br>Hub 업로드 실패 시 이 경로에서 직접 로드할 수 있습니다.<br>기본값 그대로 사용해도 무방합니다.</span></span>
         </label>
         <input id="mrg-merged_local_dir" type="text" placeholder="./models/gemma3_multimodal_merged" />
       </div>
 
       <div class="form-group">
         <label class="field-label">
-          MERGED_MODEL_REPO
-          <span class="tip-icon">?<span class="tip-box">병합 모델을 업로드할 HuggingFace Hub 레포입니다.<br>형식: yourHFID/model_name<br>예) hyokwan/multi_modal_model_g3</span></span>
-        </label>
-        <input id="mrg-merged_model_repo" type="text" placeholder="yourHFID/model_name" />
-      </div>
-
-      <div class="form-group">
-        <label class="field-label">
-          TEST_IMAGE_PATH <span class="default-val">(선택)</span>
+          TEST_IMAGE_PATH
+          <span class="opt-badge">선택</span>
           <span class="tip-icon">?<span class="tip-box">병합 완료 후 추론 검증에 사용할 이미지 파일 경로입니다.<br>비워두면 텍스트 추론 테스트만 진행합니다.</span></span>
         </label>
         <input id="mrg-test_image_path" type="text" placeholder="./dataset/..." />
@@ -521,6 +640,42 @@
 <!-- ============================================================ -->
 <div id="tab-gguf" class="tab-panel">
 
+  <!-- 가이드 배너 -->
+  <div class="guide-banner">
+    <h3>📋 GGUF 변환 전 체크리스트 — 아래 3가지는 반드시 입력하세요</h3>
+    <div class="guide-step">
+      <span class="step-num">1</span>
+      <div>
+        <span class="step-key">GGUF_SOURCE_REPO</span> —
+        GGUF로 변환하고 싶은 <strong>본인의 HuggingFace 병합 모델 주소</strong>를 입력합니다.
+        (모델 병합 탭의 <code>MERGED_MODEL_REPO</code>와 동일한 값)
+      </div>
+    </div>
+    <div class="guide-step">
+      <span class="step-num">2</span>
+      <div>
+        <span class="step-key">GGUF_OUTFILE</span> —
+        변환 결과로 저장될 <strong>GGUF 파일명</strong>을 지정합니다.
+        (예: <code>gemma3_merged.gguf</code>)
+      </div>
+    </div>
+    <div class="guide-step">
+      <span class="step-num">3</span>
+      <div>
+        <span class="step-key">GGUF_HF_REPO</span> —
+        변환된 GGUF 파일을 업로드할 <strong>본인의 HuggingFace Hub 레포 주소</strong>를 입력합니다.
+        (예: <code>yourHFID/my-model-gguf</code>)
+      </div>
+    </div>
+    <div class="guide-step">
+      <span class="step-num" style="background:#bdbdbd;">✓</span>
+      <div>
+        <span class="step-key">GGUF_LOCAL_DIR</span><span class="step-opt">선택 — 변경 불필요</span>
+        비워두면 자동으로 경로가 생성됩니다.
+      </div>
+    </div>
+  </div>
+
   <div class="card">
     <h2>GGUF 변환 설정</h2>
     <div class="form-grid">
@@ -528,25 +683,31 @@
       <div class="form-group">
         <label class="field-label">
           GGUF_SOURCE_REPO
-          <span class="tip-icon">?<span class="tip-box">변환할 병합 모델의 HuggingFace Hub 레포입니다.<br>★03 모델 병합 탭의 MERGED_MODEL_REPO와 동일한 값을 사용합니다.<br>예) hyokwan/modal_merge_test</span></span>
+          <span class="req-badge">★ 필수</span>
+          <span class="tip-icon">?<span class="tip-box">변환할 병합 모델의 HuggingFace Hub 레포입니다.<br>모델 병합 탭의 MERGED_MODEL_REPO와 동일한 값을 사용합니다.<br>예) hyokwan/modal_merge_test</span></span>
         </label>
-        <input id="gguf-source_repo" type="text" placeholder="yourHFID/merged_model" />
-      </div>
-
-      <div class="form-group">
-        <label class="field-label">
-          GGUF_LOCAL_DIR <span class="default-val">(빈값=자동 생성)</span>
-          <span class="tip-icon">?<span class="tip-box">HF에서 다운로드한 모델을 저장할 로컬 경로입니다.<br>비워두면 gguf_{모델명}_{날짜} 형식으로 자동 생성됩니다.</span></span>
-        </label>
-        <input id="gguf-local_dir" type="text" placeholder="gguf_{모델명}_{날짜} 자동 생성" />
+        <input id="gguf-source_repo" class="input-required" type="text"
+               placeholder="yourHFID/merged_model  ← 본인 HF 병합 모델 주소 입력" />
       </div>
 
       <div class="form-group">
         <label class="field-label">
           GGUF_OUTFILE
-          <span class="tip-icon">?<span class="tip-box">변환된 GGUF 파일명입니다.<br>예) model.gguf / gemma3_4b_merged.gguf</span></span>
+          <span class="req-badge">★ 필수</span>
+          <span class="tip-icon">?<span class="tip-box">변환된 GGUF 파일명입니다.<br>원하는 이름으로 지정하세요.<br>예) model.gguf / gemma3_4b_merged.gguf</span></span>
         </label>
-        <input id="gguf-outfile" type="text" placeholder="model.gguf" />
+        <input id="gguf-outfile" class="input-required" type="text"
+               placeholder="gemma3_merged.gguf  ← 원하는 파일명 입력" />
+      </div>
+
+      <div class="form-group">
+        <label class="field-label">
+          GGUF_HF_REPO
+          <span class="req-badge">★ 필수</span>
+          <span class="tip-icon">?<span class="tip-box">변환된 GGUF 파일을 업로드할 HuggingFace Hub 레포입니다.<br>없으면 자동으로 생성됩니다.<br>예) hyokwan/modal_merge_test_gguf</span></span>
+        </label>
+        <input id="gguf-hf_repo" class="input-required" type="text"
+               placeholder="yourHFID/model_gguf  ← 본인 HF 아이디로 변경" />
       </div>
 
       <div class="form-group">
@@ -565,10 +726,11 @@
 
       <div class="form-group">
         <label class="field-label">
-          GGUF_HF_REPO
-          <span class="tip-icon">?<span class="tip-box">변환된 GGUF 파일을 업로드할 HuggingFace Hub 레포입니다.<br>없으면 자동으로 생성됩니다.<br>예) hyokwan/modal_merge_test_gguf</span></span>
+          GGUF_LOCAL_DIR
+          <span class="opt-badge">변경 불필요</span>
+          <span class="tip-icon">?<span class="tip-box">HF에서 다운로드한 모델을 저장할 로컬 경로입니다.<br>비워두면 gguf_{모델명}_{날짜} 형식으로 자동 생성됩니다.</span></span>
         </label>
-        <input id="gguf-hf_repo" type="text" placeholder="yourHFID/model_gguf" />
+        <input id="gguf-local_dir" type="text" placeholder="비워두면 자동 생성" />
       </div>
 
       <div class="form-group">

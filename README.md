@@ -24,7 +24,6 @@ MySQL DB 테이블 생성
     ↓
 브라우저에서 파인튜닝 → 병합 → GGUF 변환 실행
 ```
-
 ---
 
 ## 사전 요구사항
@@ -57,6 +56,7 @@ cd llm_multimodal
 
 ```bash
 # 프로젝트 루트(README.md가 있는 폴더)에서 실행
+# alias 미 적용상태인 경우 python3 -m venv .venvg3 명령어 실행
 python -m venv .venvg3
 ```
 
@@ -113,6 +113,7 @@ deactivate
 
 ```bash
 # 프로젝트 루트에서 실행
+# alias 미 적용상태인 경우 python3 -m venv .venvgguf 명령어 실행
 python -m venv .venvgguf
 ```
 
@@ -143,7 +144,9 @@ deactivate
 
 ## STEP 3 — 환경 변수 설정
 
-`codeset/.env.example`을 복사하여 `codeset/.env`를 생성하고 아래 항목을 수정합니다.
+> **사전 조건:** MySQL DB가 먼저 구축되어 있어야 합니다.
+
+`codeset/.env.example`을 복사하여 `codeset/.env`를 생성합니다.
 
 **Windows:**
 ```bash
@@ -155,26 +158,34 @@ copy codeset\.env.example codeset\.env
 cp codeset/.env.example codeset/.env
 ```
 
-`codeset/.env`를 텍스트 편집기로 열고 아래 항목을 반드시 수정합니다:
+`codeset/.env`를 텍스트 편집기로 열고 **아래 항목을 반드시 본인 환경에 맞게 수정**합니다.
+
+> ⚠️ **수정 필수 항목** (그대로 두면 서버가 DB에 연결되지 않습니다)
 
 ```env
-# ── DB 접속 정보 (반드시 변경) ──────────────────────────
-DB_HOST=localhost
-DB_PORT=3306
-DB_NAME=hkcodedb
-DB_USER=userid
-DB_PASSWORD=userpw
+# ┌─────────────────────────────────────────────────────────┐
+# │  ★ 수정 필수 — DB 접속 정보                              │
+# └─────────────────────────────────────────────────────────┘
+DB_HOST=yourdbhost        # ← 실제 DB 호스트 주소로 변경
+DB_PORT=3306              # ← 실제 포트번호로 변경 (기본 3306)
+DB_NAME=yourdbname        # ← 실제 DB명으로 변경
+DB_USER=yourdbuser        # ← 실제 DB 계정으로 변경
+DB_PASSWORD=yourdbpw      # ← 실제 비밀번호로 변경
 
-# ── Hugging Face 토큰 ────────────────────────────────────
-# https://huggingface.co/settings/tokens 에서 발급
-HF_TOKEN=hf_xxxxxxxxxxxxxxxxxxxx
+# ┌─────────────────────────────────────────────────────────┐
+# │  ★ 수정 필수 — Hugging Face 토큰                         │
+# └─────────────────────────────────────────────────────────┘
+# 발급 주소: https://huggingface.co/settings/tokens
+HF_TOKEN=hf_xxxxxxxxxxxxxxxxxxxx   # ← 본인 HF 토큰으로 변경
 
-# ── 기본 모델 (필요 시 수정) ─────────────────────────────
-BASE_MODEL=google/gemma-3-4b-it
+# ┌─────────────────────────────────────────────────────────┐
+# │  선택 수정 — 기본 모델 (기본값: gemma3 4B)                │
+# └─────────────────────────────────────────────────────────┘
+BASE_MODEL=google/gemma-3-4b-it   # ← 다른 모델 사용 시 변경
 OUTPUT_BASE_DIR=./models
 ```
 
-> 나머지 하이퍼파라미터(학습률, LoRA r 등)는 웹 UI에서도 실시간으로 변경 가능합니다.
+> 이 외 나머지 하이퍼파라미터(학습률, LoRA r 등)는 **웹 UI 학습 설정 화면에서 실시간으로 변경 가능**합니다.
 
 ---
 
@@ -183,7 +194,7 @@ OUTPUT_BASE_DIR=./models
 MySQL에 접속해서 아래 명령을 실행합니다.
 
 ```bash
-mysql -u userid -p hkcodedb < SimulApp/db_create.sql
+mysql -u yourdbuser -p yourdbname < SimulApp/db_create.sql
 ```
 
 > MySQL Workbench / DBeaver 등 GUI 툴에서 `SimulApp/db_create.sql` 파일을 열어 직접 실행해도 됩니다.
@@ -197,19 +208,34 @@ mysql -u userid -p hkcodedb < SimulApp/db_create.sql
 
 ---
 
-## STEP 5 — 웹 서버 설치 및 구동
+## STEP 5 — 웹 서버 설치 및 구동 (서버 내 NodeJS 설치 필수) 3000번 포트 웹에서 활용
+
+> 구글에서 NVM GITHUB 검색 후 설치 링크 확인 참고요 URL https://github.com/nvm-sh/nvm
+> 다운로드 및 설치 (저장소에 등록)
+wget -qO- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.4/install.sh | bash
+> 환경설정 적용
+source ~/.bashrc
+> nvm 버전확인
+nvm --version
+> node 설치 가능버전 확인
+nvm ls-remote
+> 원하는 node 버전 설치
+nvm install 24.16.0
 
 ```bash
 cd SimulApp
 npm install
-node server.js
+npm install -g pm2
+pm2 start server.js
 ```
+> 종료 시 pm2 stop server.js
 
 또는:
 
 ```bash
 cd SimulApp
-npm start
+npm install
+node server.js
 ```
 
 서버가 정상 구동되면 터미널에 아래와 같이 출력됩니다:
@@ -245,18 +271,39 @@ python "codeset/★01. 데이터 준비_멀티모달데이터_Gemma3_OCR.py"
 ### 2단계: 파인튜닝 (웹 UI)
 
 1. 브라우저에서 **파인튜닝 탭** 이동
-2. 에폭 수, 학습률, LoRA r 등 하이퍼파라미터 설정
-3. **학습 시작** 버튼 클릭
+2. **학습 설정** 화면에서 아래 항목을 확인·수정합니다
+
+| 설정 항목 | 기본값 | 처리 방법 |
+|-----------|--------|-----------|
+| `DATASET_REPO` | 기본 샘플 데이터 | **그대로 두세요** — 샘플 데이터로 테스트 가능 |
+| `BASE_MODEL` | `google/gemma-3-4b-it` | **변경 가능** — 다른 모델로 교체 시 수정 |
+| `MAX_TRAIN_SAMPLES` | (전체 사용) | **`20` 으로 입력 권장** — 초기 빠른 테스트용, 20건만 학습 |
+
+> **처음 실행하는 경우:** `MAX_TRAIN_SAMPLES` 를 **`20`** 으로 설정하면 전체 데이터 대신 20건만 학습해서 빠르게 동작 확인이 가능합니다. 이상 없으면 비워두고 재실행하면 전체 데이터로 본 학습이 진행됩니다.
+
+3. **설정 저장** 버튼 클릭 후 **학습 시작** 버튼 클릭
 4. 실시간 로그로 진행상황 확인
-5. 완료 시 `codeset/models/` 아래에 어댑터 저장
+5. 학습 완료 후 **시뮬레이션 결과 탭**에서 학습 이력·손실 그래프 확인
+6. 완료 시 `codeset/models/` 아래에 어댑터 저장
 
 ### 3단계: 모델 병합 (웹 UI)
 
-1. **병합 탭** 이동
-2. 파인튜닝으로 생성된 어댑터 경로 입력 (예: `./models/gemma3_multimodal_lora_output_날짜`)
-3. 병합 모델 저장 경로 및 HuggingFace Hub 레포 설정
-4. **병합 시작** 버튼 클릭
-5. 완료 후 HuggingFace Hub에 자동 업로드
+1. 브라우저에서 **병합 탭** 이동
+2. 병합 설정 화면에서 아래 항목을 확인·수정합니다
+
+| 설정 항목 | 처리 방법 |
+|-----------|-----------|
+| `ADAPTER_PATH` | **★ 필수 수정** — 파인튜닝 완료 후 생성된 어댑터 폴더를 선택 (예: `./models/gemma3_multimodal_lora_output_날짜`) |
+| `MERGED_MODEL_REPO` | **★ 필수 수정** — 본인의 HuggingFace Hub 레포 주소 입력 (예: `yourHFID/my-gemma3-merged`) |
+| `MERGED_LOCAL_DIR` | 변경 불필요 — 병합 결과가 로컬에 저장되는 경로, 기본값 그대로 사용 가능 |
+| `BASE_MODEL` | 변경 불필요 — 파인튜닝과 동일한 베이스 모델 사용 |
+
+> ⚠️ `ADAPTER_PATH` 를 지정하지 않으면 병합이 실패합니다.  
+> 파인튜닝 완료 후 `codeset/models/` 폴더에 생성된 폴더명을 그대로 입력하세요.
+
+3. **설정 저장** 버튼 클릭 후 **병합 시작** 버튼 클릭
+4. 로그에서 진행상황 확인
+5. 완료 시 지정한 HuggingFace Hub 레포에 병합 모델 자동 업로드
 
 ### 4단계: GGUF 변환 (웹 UI)
 
