@@ -35,7 +35,7 @@ def loadConfig():
     스크립트와 같은 디렉토리의 .env를 로드하고 전체 설정값 딕셔너리 반환
     """
     scriptDir = os.path.dirname(os.path.abspath(__file__))
-    load_dotenv(os.path.join(scriptDir, '.env'))
+    load_dotenv(os.path.join(scriptDir, '.env'), override=True)
 
     cfg = {
         'hf_token':          os.getenv("HF_TOKEN",          "YOUR_HF_TOKEN"),
