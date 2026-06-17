@@ -24,7 +24,6 @@ MySQL DB 테이블 생성
     ↓
 브라우저에서 파인튜닝 → 병합 → GGUF 변환 실행
 ```
-
 ---
 
 ## 사전 요구사항
@@ -159,11 +158,11 @@ cp codeset/.env.example codeset/.env
 
 ```env
 # ── DB 접속 정보 (반드시 변경) ──────────────────────────
-DB_HOST=localhost
-DB_PORT=3306
-DB_NAME=hkcodedb
-DB_USER=userid
-DB_PASSWORD=userpw
+DB_HOST=yourdbhost
+DB_PORT=yourdbportname
+DB_NAME=yourdbname
+DB_USER=yourdbuser
+DB_PASSWORD=yourdbpasswrod
 
 # ── Hugging Face 토큰 ────────────────────────────────────
 # https://huggingface.co/settings/tokens 에서 발급
