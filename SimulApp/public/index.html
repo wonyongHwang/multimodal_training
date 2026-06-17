@@ -799,7 +799,7 @@ async function loadConfig() {
 }
 
 // ── 설정 저장 ────────────────────────────────────
-async function saveConfig() {
+async function saveConfig(silent) {
   var cfgKeys = [
     'dataset_repo','base_model','output_base_dir',
     'max_train_samples','max_eval_samples','max_seq_length',
@@ -815,18 +815,23 @@ async function saveConfig() {
   try {
     var res  = await fetch('/api/config', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
     var json = await res.json();
-    if (json.success) { alert('설정이 .env에 저장되었습니다.'); }
-    else              { alert('저장 실패: ' + json.message); }
-  } catch (e) { alert('오류: ' + e.message); }
+    if (!silent) {
+      if (json.success) { alert('설정이 .env에 저장되었습니다.'); }
+      else              { alert('저장 실패: ' + json.message); }
+    }
+    return json.success;
+  } catch (e) { if (!silent) { alert('오류: ' + e.message); } return false; }
 }
 
 // ── 학습 시작 ────────────────────────────────────
 async function startTraining() {
+  var saved = await saveConfig(true);
+  if (!saved) { alert('설정 저장에 실패했습니다. 다시 시도하세요.'); return; }
   try {
     var res  = await fetch('/api/run/start', { method: 'POST' });
     var json = await res.json();
     if (!json.success) { alert('학습 시작 실패: ' + json.message); return; }
-    appendLog('▶ 학습 시작됨');
+    appendLog('▶ 학습 시작됨 (설정 자동 저장 완료)');
     startPolling();
   } catch (e) { alert('오류: ' + e.message); }
 }
@@ -1009,7 +1014,7 @@ async function loadMergeConfig() {
 }
 
 // ── 병합 설정 저장 ───────────────────────────────
-async function saveMergeConfig() {
+async function saveMergeConfig(silent) {
   var body = {
     base_model:        document.getElementById('mrg-base_model').value.trim(),
     adapter_path:      document.getElementById('mrg-adapter_path').value.trim(),
@@ -1020,9 +1025,12 @@ async function saveMergeConfig() {
   try {
     var res  = await fetch('/api/merge/config', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
     var json = await res.json();
-    if (json.success) { alert('병합 설정이 .env에 저장되었습니다.'); }
-    else              { alert('저장 실패: ' + json.message); }
-  } catch (e) { alert('오류: ' + e.message); }
+    if (!silent) {
+      if (json.success) { alert('병합 설정이 .env에 저장되었습니다.'); }
+      else              { alert('저장 실패: ' + json.message); }
+    }
+    return json.success;
+  } catch (e) { if (!silent) { alert('오류: ' + e.message); } return false; }
 }
 
 // ── 어댑터 폴더 목록 ─────────────────────────────
@@ -1052,16 +1060,20 @@ function selectAdapter(val) {
 // ── 병합 시작 ────────────────────────────────────
 async function startMerge() {
   var adapterPath = document.getElementById('mrg-adapter_path').value.trim();
-  if (!adapterPath) { alert('ADAPTER_PATH를 입력하세요.'); return; }
-  var modelRepo   = document.getElementById('mrg-merged_model_repo').value.trim();
-  if (!modelRepo || modelRepo === 'YOUR_HF_ID/model_name') {
-    alert('MERGED_MODEL_REPO (HuggingFace 레포)를 입력하세요.'); return;
+  if (!adapterPath) { alert('ADAPTER_PATH를 입력하세요.\n[폴더 목록] 버튼으로 어댑터 폴더를 선택하세요.'); return; }
+  var modelRepo = document.getElementById('mrg-merged_model_repo').value.trim();
+  if (!modelRepo || modelRepo.includes('YOUR_HF_ID') || modelRepo.includes('yourHFID')) {
+    alert('MERGED_MODEL_REPO에 본인의 HuggingFace 레포 주소를 입력하세요.\n예) myname/my-gemma3-merged'); return;
   }
+  var saved = await saveMergeConfig(true);
+  if (!saved) { alert('설정 저장에 실패했습니다. 다시 시도하세요.'); return; }
   try {
     var res  = await fetch('/api/merge/start', { method: 'POST' });
     var json = await res.json();
     if (!json.success) { alert('병합 시작 실패: ' + json.message); return; }
-    appendMergeLog('🔀 병합 시작됨');
+    appendMergeLog('🔀 병합 시작됨 (설정 자동 저장 완료)');
+    appendMergeLog('   ADAPTER_PATH      : ' + adapterPath);
+    appendMergeLog('   MERGED_MODEL_REPO : ' + modelRepo);
     startMergePolling();
   } catch (e) { alert('오류: ' + e.message); }
 }
@@ -1122,7 +1134,7 @@ async function loadGgufConfig() {
 }
 
 // ── GGUF 설정 저장 ───────────────────────────────
-async function saveGgufConfig() {
+async function saveGgufConfig(silent) {
   var body = {
     source_repo:  document.getElementById('gguf-source_repo').value.trim(),
     local_dir:    document.getElementById('gguf-local_dir').value.trim(),
@@ -1134,22 +1146,36 @@ async function saveGgufConfig() {
   try {
     var res  = await fetch('/api/gguf/config', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
     var json = await res.json();
-    if (json.success) { alert('GGUF 설정이 .env에 저장되었습니다.'); }
-    else              { alert('저장 실패: ' + json.message); }
-  } catch (e) { alert('오류: ' + e.message); }
+    if (!silent) {
+      if (json.success) { alert('GGUF 설정이 .env에 저장되었습니다.'); }
+      else              { alert('저장 실패: ' + json.message); }
+    }
+    return json.success;
+  } catch (e) { if (!silent) { alert('오류: ' + e.message); } return false; }
 }
 
 // ── GGUF 변환 시작 ───────────────────────────────
 async function startGguf() {
   var sourceRepo = document.getElementById('gguf-source_repo').value.trim();
-  if (!sourceRepo) { alert('GGUF_SOURCE_REPO를 입력하세요.'); return; }
+  if (!sourceRepo || sourceRepo.includes('YOUR_HF_ID') || sourceRepo.includes('yourHFID')) {
+    alert('GGUF_SOURCE_REPO에 변환할 HuggingFace 모델 주소를 입력하세요.\n예) myname/my-gemma3-merged'); return;
+  }
+  var outfile = document.getElementById('gguf-outfile').value.trim();
+  if (!outfile) { alert('GGUF_OUTFILE에 저장할 파일명을 입력하세요.\n예) gemma3_merged.gguf'); return; }
   var hfRepo = document.getElementById('gguf-hf_repo').value.trim();
-  if (!hfRepo) { alert('GGUF_HF_REPO (업로드 레포)를 입력하세요.'); return; }
+  if (!hfRepo || hfRepo.includes('YOUR_HF_ID') || hfRepo.includes('yourHFID')) {
+    alert('GGUF_HF_REPO에 업로드할 HuggingFace 레포 주소를 입력하세요.\n예) myname/my-model-gguf'); return;
+  }
+  var saved = await saveGgufConfig(true);
+  if (!saved) { alert('설정 저장에 실패했습니다. 다시 시도하세요.'); return; }
   try {
     var res  = await fetch('/api/gguf/start', { method: 'POST' });
     var json = await res.json();
     if (!json.success) { alert('변환 시작 실패: ' + json.message); return; }
-    appendGgufLog('📦 GGUF 변환 시작됨');
+    appendGgufLog('📦 GGUF 변환 시작됨 (설정 자동 저장 완료)');
+    appendGgufLog('   SOURCE_REPO : ' + sourceRepo);
+    appendGgufLog('   OUTFILE     : ' + outfile);
+    appendGgufLog('   HF_REPO     : ' + hfRepo);
     startGgufPolling();
   } catch (e) { alert('오류: ' + e.message); }
 }
