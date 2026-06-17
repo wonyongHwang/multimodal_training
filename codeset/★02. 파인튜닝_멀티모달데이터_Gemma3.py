@@ -77,7 +77,7 @@ def loadConfig():
     .env 값만 변경해 코드 수정 없이 하이퍼파라미터 시뮬레이션 가능
     """
     scriptDir = os.path.dirname(os.path.abspath(__file__))
-    load_dotenv(os.path.join(scriptDir, '.env'))
+    load_dotenv(os.path.join(scriptDir, '.env'), override=True)
 
     outputBaseDir = os.getenv("OUTPUT_BASE_DIR", "./models")
     outputDir     = os.path.join(
