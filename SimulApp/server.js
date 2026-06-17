@@ -30,22 +30,21 @@ const PY_MERGE      = path.join(CODESET_DIR, '★03. 데이터병합 및 저장_
 const PY_GGUF       = path.join(CODESET_DIR, '★04. GGUF 모델 변환.py');
 const MODELS_DIR    = path.join(CODESET_DIR, 'models');
 
-// venv Python 탐색 (Windows 우선, 없으면 시스템 python3)
-const VENV_PY_WIN  = path.join(__dirname, '..', '.venv', 'Scripts', 'python.exe');
-const VENV_PY_NIX  = path.join(__dirname, '..', '.venv', 'bin', 'python');
-let PYTHON_CMD = 'python3';
-if (fs.existsSync(VENV_PY_WIN))       { PYTHON_CMD = VENV_PY_WIN; }
-else if (fs.existsSync(VENV_PY_NIX))  { PYTHON_CMD = VENV_PY_NIX; }
+// 파인튜닝·병합 전용 venv (.venvg3) 탐색
+const VENVG3_PY_WIN = path.join(__dirname, '..', '.venvg3', 'Scripts', 'python.exe');
+const VENVG3_PY_NIX = path.join(__dirname, '..', '.venvg3', 'bin', 'python');
+let PYTHON_CMD = 'python';
+if (fs.existsSync(VENVG3_PY_WIN))      { PYTHON_CMD = VENVG3_PY_WIN; }
+else if (fs.existsSync(VENVG3_PY_NIX)) { PYTHON_CMD = VENVG3_PY_NIX; }
+console.log(`파인튜닝/병합 Python 경로: ${PYTHON_CMD}`);
 
 // GGUF 전용 venv (.venvgguf) 탐색
 const VENVGGUF_PY_WIN = path.join(__dirname, '..', '.venvgguf', 'Scripts', 'python.exe');
 const VENVGGUF_PY_NIX = path.join(__dirname, '..', '.venvgguf', 'bin', 'python');
-let PYTHON_GGUF_CMD = PYTHON_CMD;
+let PYTHON_GGUF_CMD = 'python';
 if (fs.existsSync(VENVGGUF_PY_WIN))      { PYTHON_GGUF_CMD = VENVGGUF_PY_WIN; }
 else if (fs.existsSync(VENVGGUF_PY_NIX)) { PYTHON_GGUF_CMD = VENVGGUF_PY_NIX; }
-console.log(`GGUF Python 실행 경로: ${PYTHON_GGUF_CMD}`);
-
-console.log(`Python 실행 경로: ${PYTHON_CMD}`);
+console.log(`GGUF Python 경로: ${PYTHON_GGUF_CMD}`);
 
 // ============================================================
 // DB 풀
@@ -59,7 +58,25 @@ const dbPool = mysql2.createPool({
   password:           process.env.DB_PASSWORD || '',
   waitForConnections: true,
   connectionLimit:    5,
+  connectTimeout:     5000,   // 5초 내 연결 안 되면 즉시 에러
+  acquireTimeout:     5000,
 });
+
+// 서버 시작 시 DB 연결 상태 확인
+let dbAvailable = false;
+(async () => {
+  try {
+    const conn = await dbPool.getConnection();
+    await conn.ping();
+    conn.release();
+    dbAvailable = true;
+    console.log(`[DB] 연결 성공: ${process.env.DB_HOST}/${process.env.DB_NAME}`);
+  } catch (e) {
+    dbAvailable = false;
+    console.warn(`[DB] 연결 실패 — 시뮬레이션 이력 탭 비활성화: ${e.message}`);
+    console.warn(`     DB_HOST=${process.env.DB_HOST}, DB_NAME=${process.env.DB_NAME}`);
+  }
+})();
 
 // ============================================================
 // .env 파싱 / 업데이트 유틸
@@ -143,6 +160,28 @@ let ggufLogs      = [];
 const app = express();
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
+
+// ────────────────────────────────────────────────
+// GET /api/db/status — DB 연결 상태 확인
+// ────────────────────────────────────────────────
+
+app.get('/api/db/status', async (req, res) => {
+  try {
+    const conn = await dbPool.getConnection();
+    await conn.ping();
+    conn.release();
+    dbAvailable = true;
+    res.json({ success: true, connected: true, message: 'DB 연결 정상' });
+  } catch (e) {
+    dbAvailable = false;
+    res.json({
+      success: true,
+      connected: false,
+      message: `DB 연결 불가: ${e.message}`,
+      hint: `DB_HOST=${process.env.DB_HOST}, DB_NAME=${process.env.DB_NAME}`,
+    });
+  }
+});
 
 // ────────────────────────────────────────────────
 // GET /api/config — .env 하이퍼파라미터 조회
@@ -290,6 +329,13 @@ app.get('/api/run/status', (req, res) => {
 // ────────────────────────────────────────────────
 
 app.get('/api/simulations', async (req, res) => {
+  if (!dbAvailable) {
+    return res.status(503).json({
+      success: false,
+      dbError: true,
+      message: `DB 연결 불가 (${process.env.DB_HOST}). VPN/네트워크 확인 후 서버를 재시작하거나 [DB 재연결] 버튼을 클릭하세요.`,
+    });
+  }
   try {
     const [rows] = await dbPool.query(
       `SELECT sim_seq, status, run_timestamp, end_timestamp,
