@@ -395,6 +395,16 @@
 <!-- ============================================================ -->
 <div id="tab-res" class="tab-panel">
 
+  <!-- DB 연결 상태 배너 -->
+  <div id="dbBanner" style="display:none; background:#fff3e0; border:1px solid #ffb74d;
+       border-radius:8px; padding:14px 18px; margin-bottom:16px;
+       font-size:0.87rem; color:#e65100; line-height:1.6;">
+    <strong>⚠ DB 연결 불가</strong><br/>
+    <span id="dbBannerMsg"></span><br/>
+    <button class="btn btn-save" style="margin-top:10px; padding:6px 16px; font-size:0.83rem;"
+            onclick="retryDbConnect()">↻ DB 재연결 시도</button>
+  </div>
+
   <div class="card">
     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
       <h2>시뮬레이션 이력</h2>
@@ -699,13 +709,38 @@ function updateBadge(running) {
   else         { badge.textContent = '대기 중';   badge.className = 'status-badge status-idle'; }
 }
 
+// ── DB 재연결 시도 ───────────────────────────────
+async function retryDbConnect() {
+  try {
+    var res  = await fetch('/api/db/status');
+    var json = await res.json();
+    if (json.connected) {
+      document.getElementById('dbBanner').style.display = 'none';
+      loadSimulations();
+    } else {
+      document.getElementById('dbBannerMsg').textContent = json.message + ' / ' + (json.hint || '');
+    }
+  } catch (e) { console.error('DB 재연결 오류:', e); }
+}
+
 // ── 시뮬레이션 이력 로드 ─────────────────────────
 async function loadSimulations() {
   try {
     var res  = await fetch('/api/simulations');
     var json = await res.json();
+
+    // DB 연결 불가 처리
+    if (!json.success && json.dbError) {
+      var banner = document.getElementById('dbBanner');
+      document.getElementById('dbBannerMsg').textContent = json.message;
+      banner.style.display = 'block';
+      document.getElementById('simTbody').innerHTML =
+        '<tr><td colspan="10" class="empty-msg">DB 연결 불가 — 위 배너를 확인하세요</td></tr>';
+      return;
+    }
     if (!json.success) { alert('이력 조회 실패: ' + json.message); return; }
 
+    document.getElementById('dbBanner').style.display = 'none';
     var tbody = document.getElementById('simTbody');
     tbody.innerHTML = '';
     var rows = json.data;
