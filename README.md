@@ -135,6 +135,16 @@ source .venvgguf/bin/activate
 pip install -r codeset/requirements_gguf.txt
 ```
 
+```bash 향후 GGUF 파일 변환을 위해 필수 주의: .venvgguf 가상환경에 있어야함!
+# 1. Navigate to the working directory
+cd /home/llmuser/multimodal_training/codeset
+
+# 2. Clone the llama.cpp repository
+git clone https://github.com/ggerganov/llama.cpp
+
+# 3. Install the required Python dependencies
+pip install -r llama.cpp/requirements.txt
+
 가상환경 비활성화:
 ```bash
 deactivate
