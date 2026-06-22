@@ -453,7 +453,7 @@ def main():
     # ===== 모델 / 프로세서 로드 =====
     model = AutoModelForImageTextToText.from_pretrained(
         cfg['base_model'],
-        quantization_config=quantConfig,
+        # quantization_config=quantConfig,
         device_map={"": 0},
         torch_dtype=torch.bfloat16,
         attn_implementation='eager',

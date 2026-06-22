@@ -43,8 +43,8 @@ MySQL DB 테이블 생성
 ## STEP 1 — 프로젝트 다운로드
 
 ```bash
-git clone https://github.com/your-org/llm_multimodal.git
-cd llm_multimodal
+git clone https://github.com/hyokwan/multimodal_training.git
+cd llm_multimodal_training
 ```
 
 ---
@@ -73,6 +73,8 @@ source .venvg3/bin/activate
 ```
 
 #### PyTorch GPU 버전 설치 (CUDA 12.6)
+# https://docs.vllm.ai/en/v0.11.1/getting_started/installation/gpu/#create-a-new-python-environment
+# 블랙웰 b200 경우 pip install torch torchvision --index-url https://download.pytorch.org/whl/cu130
 
 ```bash
 pip install torch torchvision --index-url https://download.pytorch.org/whl/cu126
