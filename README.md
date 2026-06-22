@@ -73,8 +73,8 @@ source .venvg3/bin/activate
 ```
 
 #### PyTorch GPU 버전 설치 (CUDA 12.6)
-# https://docs.vllm.ai/en/v0.11.1/getting_started/installation/gpu/#create-a-new-python-environment
-# 블랙웰 b200 경우 pip install torch torchvision --index-url https://download.pytorch.org/whl/cu130
+https://docs.vllm.ai/en/v0.11.1/getting_started/installation/gpu/#create-a-new-python-environment
+블랙웰 b200 경우 pip install torch torchvision --index-url https://download.pytorch.org/whl/cu130
 
 ```bash
 pip install torch torchvision --index-url https://download.pytorch.org/whl/cu126
