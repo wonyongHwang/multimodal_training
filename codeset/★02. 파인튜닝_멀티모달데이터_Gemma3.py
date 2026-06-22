@@ -424,11 +424,15 @@ def main():
 
     # ===== 데이터셋 로드 =====
     ds       = load_dataset(cfg['dataset_repo'])
-    train_ds = ds['train']
-    try:
-        eval_ds = ds['test']
-    except KeyError:
-        eval_ds = ds['validation']
+    dataset = ds[list(ds.keys())[0]]
+    # 8:2 분할
+    split_ds = dataset.train_test_split(
+        test_size=0.2,
+        seed=42
+    )
+
+    train_ds = split_ds["train"]
+    eval_ds = split_ds["test"]
 
     if cfg['max_train_samples']:
         train_ds = train_ds.select(range(min(cfg['max_train_samples'], len(train_ds))))
