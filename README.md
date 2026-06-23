@@ -44,7 +44,7 @@ MySQL DB 테이블 생성
 
 ```bash
 git clone https://github.com/hyokwan/multimodal_training.git
-cd llm_multimodal_training
+cd multimodal_training
 ```
 
 ---
@@ -73,10 +73,16 @@ source .venvg3/bin/activate
 ```
 
 #### PyTorch GPU 버전 설치 (CUDA 12.6)
-https://docs.vllm.ai/en/v0.11.1/getting_started/installation/gpu/#create-a-new-python-environment
-블랙웰 b200 경우 pip install torch torchvision --index-url https://download.pytorch.org/whl/cu130
+브랙웰 사용이유 : https://docs.vllm.ai/en/v0.11.1/getting_started/installation/gpu/#create-a-new-python-environment
+
 
 ```bash
+# B200 등 블랙웰 최신 버전인 경우 아래 명령어 실행
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cu130
+```
+
+```bash
+# 일반 GPU 경우 경우 아래 명령어 실행
 pip install torch torchvision --index-url https://download.pytorch.org/whl/cu126
 ```
 
@@ -139,7 +145,7 @@ pip install -r codeset/requirements_gguf.txt
 
 ```bash 향후 GGUF 파일 변환을 위해 필수 주의: .venvgguf 가상환경에 있어야함!
 # 1. Navigate to the working directory
-cd /home/llmuser/multimodal_training/codeset
+cd codeset
 
 # 2. Clone the llama.cpp repository
 git clone https://github.com/ggerganov/llama.cpp
@@ -147,9 +153,10 @@ git clone https://github.com/ggerganov/llama.cpp
 # 3. Install the required Python dependencies
 pip install -r llama.cpp/requirements.txt
 
-가상환경 비활성화:
+가상환경 비활성화 및 multimodal_training 폴더로 다시 이동:
 ```bash
 deactivate
+cd ..
 ```
 
 > **GGUF 별도 디버깅 시:** 반드시 `.venvgguf` 환경을 활성화한 상태에서 작업하세요.
@@ -226,15 +233,30 @@ mysql -u yourdbuser -p yourdbname < SimulApp/db_create.sql
 
 > 구글에서 NVM GITHUB 검색 후 설치 링크 확인 참고요 URL https://github.com/nvm-sh/nvm
 > 다운로드 및 설치 (저장소에 등록)
+```bash
 wget -qO- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.4/install.sh | bash
-> 환경설정 적용
+```
+
+환경설정 적용
+```bash
 source ~/.bashrc
-> nvm 버전확인
+```
+nvm 버전확인
+
+```bash
 nvm --version
-> node 설치 가능버전 확인
+```
+
+node 설치 가능버전 확인
+
+```bash
 nvm ls-remote
-> 원하는 node 버전 설치
+```
+
+원하는 node 버전 설치
+```bash
 nvm install 24.16.0
+```
 
 ```bash
 cd SimulApp
@@ -242,8 +264,7 @@ npm install
 npm install -g pm2
 pm2 start server.js
 ```
-> 종료 시 pm2 stop server.js
-
+종료 시 pm2 stop server.js
 또는:
 
 ```bash
