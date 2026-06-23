@@ -1,5 +1,44 @@
 # 수정 로그
 
+## 2026-06-23 (추가)
+
+### SimulApp/server.js + SimulApp/public/index.html (학습 중지 버튼 + 시뮬레이션 테이블 데이터셋 컬럼)
+
+**변경 내용:**
+
+| 파일 | 변경 내용 |
+|------|-----------|
+| `SimulApp/server.js` | `POST /api/run/stop` 엔드포인트 신규 추가 — `currentProc.kill('SIGTERM')` 후 DB `simulation_runs` 중 `status='running'` 레코드를 `stopped`/`end_timestamp=NOW()`로 업데이트 |
+| `SimulApp/public/index.html` | `.btn-stop` / `.s-stopped` CSS 추가; `■ 학습 중지` 버튼 추가 (학습 중일 때만 표시); `stopTraining()` 함수 추가; `updateBadge()` — Stop 버튼 show/hide 연동; 시뮬레이션 결과 테이블 `데이터셋` 컬럼(11번째) 추가 — `dataset_repo` 표시(마우스오버 시 전체 경로 tooltip) |
+
+**동작 흐름:**
+1. 학습 시작 → `■ 학습 중지` 버튼 활성화(빨간색)
+2. 중지 버튼 클릭 → 확인 다이얼로그 → `POST /api/run/stop` 호출
+3. 서버: 파이썬 프로세스 SIGTERM 종료 → DB status='stopped' 업데이트
+4. 로그박스에 "■ 학습 중지됨 (사용자 요청)" 표시, 배지 대기 중으로 복귀
+
+---
+
+## 2026-06-23
+
+### ★04. GGUF 모델 변환.py / ★04. GGUF 모델 변환.ipynb
+
+**문제:** GGUF 변환 subprocess 실행 시 `ModuleNotFoundError: No module named 'transformers'` 오류 발생
+
+**원인:** `convertToGguf()` 함수 내 `subprocess.run(['python', ...])` 호출이 `.venvgguf` 가상환경 파이썬이 아닌 시스템 파이썬(`/usr/bin/python`)을 사용. 시스템 파이썬에는 `transformers` 미설치.
+
+**변경 내용:**
+
+| 파일 | 위치 | 변경 전 | 변경 후 |
+|------|------|---------|---------|
+| `★04. GGUF 모델 변환.py` | 임포트 | `import os, subprocess` | `import sys` 추가 |
+| `★04. GGUF 모델 변환.py` | `convertToGguf()` L112 | `cmd = ['python', convertScript, ...]` | `cmd = [sys.executable, convertScript, ...]` |
+| `★04. GGUF 모델 변환.ipynb` | 셀 `15e06be4` | `cmd = ['python', convertScript, ...]` | `import sys` 추가 + `cmd = [sys.executable, convertScript, ...]` |
+
+**효과:** `sys.executable`은 현재 스크립트를 실행 중인 파이썬 인터프리터 경로를 반환하므로, `server.js`가 `.venvgguf/bin/python`으로 스크립트를 실행하면 subprocess도 동일하게 `.venvgguf/bin/python`을 사용하여 `transformers` 정상 인식
+
+---
+
 ## 2026-06-12
 
 ### SimulApp/public/index.html (UI 개선)

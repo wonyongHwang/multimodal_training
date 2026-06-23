@@ -110,6 +110,7 @@
     .btn:hover { opacity: .85; }
     .btn-save  { background: #5c6bc0; color: #fff; }
     .btn-start { background: #2e7d32; color: #fff; }
+    .btn-stop  { background: #c62828; color: #fff; }
 
     .status-badge {
       display: inline-block; padding: 3px 10px; border-radius: 12px;
@@ -132,6 +133,7 @@
     .s-running   { color: #2e7d32; font-weight: 600; }
     .s-completed { color: #1565c0; font-weight: 600; }
     .s-failed    { color: #c62828; font-weight: 600; }
+    .s-stopped   { color: #e65100; font-weight: 600; }
     #chartWrap { position: relative; height: 340px; }
     .empty-msg { text-align: center; color: #aaa; padding: 40px 0; font-size: 0.95rem; }
 
@@ -467,6 +469,7 @@
     <div class="btn-row">
       <button class="btn btn-save"  onclick="saveConfig()">설정 저장 (.env)</button>
       <button class="btn btn-start" onclick="startTraining()">▶ 학습 시작</button>
+      <button id="stopBtn" class="btn btn-stop" onclick="stopTraining()" style="display:none;">■ 학습 중지</button>
     </div>
     <br/>
     <div id="logBox">로그가 여기에 표시됩니다...</div>
@@ -499,13 +502,13 @@
       <table class="sim-table">
         <thead>
           <tr>
-            <th>#</th><th>상태</th><th>시작 시각</th><th>모델</th>
+            <th>#</th><th>상태</th><th>시작 시각</th><th>모델</th><th>데이터셋</th>
             <th>에폭</th><th>LR</th><th>r/α</th>
             <th>손실</th><th>소요(초)</th><th>스텝</th>
           </tr>
         </thead>
         <tbody id="simTbody">
-          <tr><td colspan="10" class="empty-msg">데이터 없음</td></tr>
+          <tr><td colspan="11" class="empty-msg">데이터 없음</td></tr>
         </tbody>
       </table>
     </div>
@@ -823,6 +826,18 @@ async function saveConfig(silent) {
   } catch (e) { if (!silent) { alert('오류: ' + e.message); } return false; }
 }
 
+// ── 학습 중지 ────────────────────────────────────
+async function stopTraining() {
+  if (!confirm('학습을 중지하시겠습니까?\nDB 상태가 stopped로 변경됩니다.')) return;
+  try {
+    var res  = await fetch('/api/run/stop', { method: 'POST' });
+    var json = await res.json();
+    if (!json.success) { alert('중지 실패: ' + json.message); return; }
+    appendLog('■ 학습 중지됨 (사용자 요청)');
+    stopPolling();
+  } catch (e) { alert('오류: ' + e.message); }
+}
+
 // ── 학습 시작 ────────────────────────────────────
 async function startTraining() {
   var saved = await saveConfig(true);
@@ -871,9 +886,15 @@ function appendLog(text) {
 }
 
 function updateBadge(running) {
-  var badge = document.getElementById('runBadge');
-  if (running) { badge.textContent = '학습 중...'; badge.className = 'status-badge status-running'; }
-  else         { badge.textContent = '대기 중';   badge.className = 'status-badge status-idle'; }
+  var badge   = document.getElementById('runBadge');
+  var stopBtn = document.getElementById('stopBtn');
+  if (running) {
+    badge.textContent = '학습 중...'; badge.className = 'status-badge status-running';
+    stopBtn.style.display = 'inline-block';
+  } else {
+    badge.textContent = '대기 중'; badge.className = 'status-badge status-idle';
+    stopBtn.style.display = 'none';
+  }
 }
 
 // ── DB 재연결 시도 ───────────────────────────────
@@ -902,7 +923,7 @@ async function loadSimulations() {
       document.getElementById('dbBannerMsg').textContent = json.message;
       banner.style.display = 'block';
       document.getElementById('simTbody').innerHTML =
-        '<tr><td colspan="10" class="empty-msg">DB 연결 불가 — 위 배너를 확인하세요</td></tr>';
+        '<tr><td colspan="11" class="empty-msg">DB 연결 불가 — 위 배너를 확인하세요</td></tr>';
       return;
     }
     if (!json.success) { alert('이력 조회 실패: ' + json.message); return; }
@@ -912,7 +933,7 @@ async function loadSimulations() {
     tbody.innerHTML = '';
     var rows = json.data;
     if (rows.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="10" class="empty-msg">데이터 없음</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="11" class="empty-msg">데이터 없음</td></tr>';
       return;
     }
 
@@ -922,20 +943,22 @@ async function loadSimulations() {
       tr.dataset.seq = r.sim_seq;
       tr.onclick = function() { selectSim(this.dataset.seq); };
 
-      var statusCls  = 's-' + (r.status || 'running');
-      var ts         = r.run_timestamp ? new Date(r.run_timestamp).toLocaleString('ko-KR') : '-';
-      var modelShort = r.model_name    ? r.model_name.split('/').pop() : '-';
-      var lr         = r.learning_rate !== null ? Number(r.learning_rate).toExponential(1) : '-';
-      var loraRA     = (r.lora_r !== null && r.lora_alpha !== null) ? r.lora_r + '/' + r.lora_alpha : '-';
-      var loss       = r.train_loss    !== null ? Number(r.train_loss).toFixed(4)  : '-';
-      var rt         = r.runtime_sec   !== null ? Number(r.runtime_sec).toFixed(0) : '-';
-      var step       = r.global_step   !== null ? r.global_step : '-';
+      var statusCls   = 's-' + (r.status || 'running');
+      var ts          = r.run_timestamp ? new Date(r.run_timestamp).toLocaleString('ko-KR') : '-';
+      var modelShort  = r.model_name    ? r.model_name.split('/').pop() : '-';
+      var datasetShort = r.dataset_repo ? r.dataset_repo.split('/').pop() : '-';
+      var lr          = r.learning_rate !== null ? Number(r.learning_rate).toExponential(1) : '-';
+      var loraRA      = (r.lora_r !== null && r.lora_alpha !== null) ? r.lora_r + '/' + r.lora_alpha : '-';
+      var loss        = r.train_loss    !== null ? Number(r.train_loss).toFixed(4)  : '-';
+      var rt          = r.runtime_sec   !== null ? Number(r.runtime_sec).toFixed(0) : '-';
+      var step        = r.global_step   !== null ? r.global_step : '-';
 
       tr.innerHTML =
         '<td>' + r.sim_seq + '</td>' +
         '<td class="' + statusCls + '">' + r.status + '</td>' +
         '<td>' + ts + '</td>' +
         '<td>' + modelShort + '</td>' +
+        '<td title="' + (r.dataset_repo || '') + '">' + datasetShort + '</td>' +
         '<td>' + (r.num_epochs || '-') + '</td>' +
         '<td>' + lr + '</td>' +
         '<td>' + loraRA + '</td>' +

@@ -15,6 +15,7 @@ HuggingFace Hub에서 병합 모델을 다운로드하고 GGUF 포맷으로 변�
 
 import os
 import subprocess
+import sys
 from datetime import datetime
 
 from dotenv import load_dotenv
@@ -109,7 +110,7 @@ def convertToGguf(cfg):
 
     outfileAbs = os.path.join(scriptDir, cfg['outfile'])
 
-    cmd = ['python', convertScript, localDirAbs, '--outfile', outfileAbs, '--outtype', cfg['outtype']]
+    cmd = [sys.executable, convertScript, localDirAbs, '--outfile', outfileAbs, '--outtype', cfg['outtype']]
     print(f"GGUF 변환 실행: {' '.join(cmd)}")
 
     try:

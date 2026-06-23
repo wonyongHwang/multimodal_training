@@ -308,6 +308,34 @@ app.post('/api/run/start', (req, res) => {
 });
 
 // ────────────────────────────────────────────────
+// POST /api/run/stop — 학습 강제 중지
+// ────────────────────────────────────────────────
+
+app.post('/api/run/stop', async (req, res) => {
+  if (currentProc === null) {
+    return res.status(409).json({ success: false, message: '실행 중인 학습이 없습니다.' });
+  }
+  try {
+    currentProc.kill('SIGTERM');
+    currentProc = null;
+
+    if (dbAvailable) {
+      try {
+        await dbPool.query(
+          "UPDATE simulation_runs SET status='stopped', end_timestamp=NOW() WHERE status='running'"
+        );
+      } catch (dbErr) {
+        console.warn('[STOP] DB 상태 업데이트 실패:', dbErr.message);
+      }
+    }
+
+    res.json({ success: true, message: '학습이 중지되었습니다.' });
+  } catch (e) {
+    res.status(500).json({ success: false, message: e.message });
+  }
+});
+
+// ────────────────────────────────────────────────
 // GET /api/run/status — 현재 실행 상태·로그
 // ────────────────────────────────────────────────
 
