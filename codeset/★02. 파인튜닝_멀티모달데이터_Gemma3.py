@@ -304,11 +304,50 @@ def buildMessages(example):
 
 def getCollateFn(processor, model):
     """processor와 model을 캡처한 collate_fn 클로저 반환"""
+
+    def _mergeMixedBatch(imgBatch, txtBatch, imgIdx, txtIdx, totalSize):
+        """혼합 배치의 이미지/텍스트 서브배치를 원본 순서로 병합"""
+        imgSeqLen  = imgBatch["input_ids"].shape[1]
+        txtSeqLen  = txtBatch["input_ids"].shape[1]
+        maxSeqLen  = max(imgSeqLen, txtSeqLen)
+        padId      = processor.tokenizer.pad_token_id or 0
+        seqKeys    = ["input_ids", "attention_mask", "token_type_ids"]
+        seqPadMap  = {"input_ids": padId, "attention_mask": 0, "token_type_ids": 0}
+        mergedDict = {}
+
+        for ki in range(0, len(seqKeys)):
+            key       = seqKeys[ki]
+            padVal    = seqPadMap[key]
+            imgTensor = imgBatch.get(key)
+            txtTensor = txtBatch.get(key)
+            if imgTensor is None and txtTensor is None:
+                continue
+            dtype = (imgTensor if imgTensor is not None else txtTensor).dtype
+            if imgTensor is not None:
+                imgPadded = torch.nn.functional.pad(imgTensor, (0, maxSeqLen - imgSeqLen), value=padVal)
+            else:
+                imgPadded = torch.full((len(imgIdx), maxSeqLen), padVal, dtype=dtype)
+            if txtTensor is not None:
+                txtPadded = torch.nn.functional.pad(txtTensor, (0, maxSeqLen - txtSeqLen), value=padVal)
+            else:
+                txtPadded = torch.full((len(txtIdx), maxSeqLen), padVal, dtype=dtype)
+            outTensor = torch.full((totalSize, maxSeqLen), padVal, dtype=dtype)
+            for k in range(0, len(imgIdx)):
+                outTensor[imgIdx[k]] = imgPadded[k]
+            for k in range(0, len(txtIdx)):
+                outTensor[txtIdx[k]] = txtPadded[k]
+            mergedDict[key] = outTensor
+
+        if "pixel_values" in imgBatch:
+            mergedDict["pixel_values"] = imgBatch["pixel_values"]
+
+        return mergedDict
+
     def collateFn(examples):
         """텍스트 + 이미지 데이터를 모델 학습용 배치로 변환 및 불필요 토큰 loss 제외"""
-        texts       = []
-        images      = []
-        hasAnyImage = False
+        allTexts     = []
+        nestedImages = []  # 샘플당 [img] 또는 None (중첩 리스트 구조)
+        hasAnyImage  = False
 
         for i in range(0, len(examples)):
             example  = examples[i]
@@ -316,24 +355,60 @@ def getCollateFn(processor, model):
             text = processor.apply_chat_template(
                 messages, tokenize=False, add_generation_prompt=False
             )
-            texts.append(text)
+            allTexts.append(text)
 
-            exampleImages = []
-            userContent   = messages[1]["content"]
+            sampleImage = None
+            userContent = messages[1]["content"]
             for j in range(0, len(userContent)):
                 if userContent[j]["type"] == "image":
-                    exampleImages.append(userContent[j]["image"])
+                    sampleImage = userContent[j]["image"]
+                    hasAnyImage = True
+                    break
 
-            if len(exampleImages) > 0:
-                hasAnyImage = True
-                images.append(exampleImages)
+            if sampleImage is not None:
+                nestedImages.append([sampleImage])  # 샘플당 [img] 중첩 — processor가 배치 경계를 인식하도록
             else:
-                images.append([])
+                nestedImages.append(None)
 
-        if hasAnyImage:
-            batch = processor(text=texts, images=images, return_tensors="pt", padding=True)
+        if not hasAnyImage:
+            # 전부 text-only
+            batch = processor(text=allTexts, return_tensors="pt", padding=True)
+
         else:
-            batch = processor(text=texts, return_tensors="pt", padding=True)
+            allHaveImage = True
+            for i in range(0, len(nestedImages)):
+                if nestedImages[i] is None:
+                    allHaveImage = False
+                    break
+
+            if allHaveImage:
+                # 전부 image-text → 중첩 리스트로 한 번에 처리
+                # [[img1],[img2],...] 구조여야 processor가 len==batchSize로 인식
+                batch = processor(text=allTexts, images=nestedImages, return_tensors="pt", padding=True)
+
+            else:
+                # 혼합 배치 → 이미지/텍스트 각각 분리 처리 후 원본 순서로 병합
+                imgIdx = []
+                txtIdx = []
+                for i in range(0, len(nestedImages)):
+                    if nestedImages[i] is not None:
+                        imgIdx.append(i)
+                    else:
+                        txtIdx.append(i)
+
+                imgTexts  = []
+                imgImages = []
+                for k in range(0, len(imgIdx)):
+                    imgTexts.append(allTexts[imgIdx[k]])
+                    imgImages.append(nestedImages[imgIdx[k]])
+
+                txtTexts = []
+                for k in range(0, len(txtIdx)):
+                    txtTexts.append(allTexts[txtIdx[k]])
+
+                imgBatch = processor(text=imgTexts, images=imgImages, return_tensors="pt", padding=True)
+                txtBatch = processor(text=txtTexts, return_tensors="pt", padding=True)
+                batch    = _mergeMixedBatch(imgBatch, txtBatch, imgIdx, txtIdx, len(allTexts))
 
         labels     = batch["input_ids"].clone()
         padTokenId = processor.tokenizer.pad_token_id
