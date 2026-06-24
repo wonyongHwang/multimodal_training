@@ -1,5 +1,37 @@
 # 수정 로그
 
+## 2026-06-24
+
+### SimulApp/server.js + SimulApp/public/index.html (프로세스 지속성 및 로그 영구 보존)
+
+**문제:** 브라우저 창 또는 서버 터미널 창을 닫고 재접속하면 학습 로그가 사라지고 학습이 중단됨
+
+**원인:**
+1. Python 프로세스가 Node.js 의 자식 프로세스로 실행되어 Node 종료 시 함께 종료
+2. 로그(`trainLogs`, `mergeLogs`, `ggufLogs`)가 Node.js 메모리에만 존재 → 서버 재시작 시 소멸
+3. 브라우저 `init()` 함수가 재접속 시 기존 로그를 즉시 표시하지 않고 2초 폴링 대기 후 표시
+
+**변경 내용:**
+
+| 파일 | 변경 내용 |
+|------|-----------|
+| `SimulApp/server.js` | Python 프로세스를 `bash -c '... & echo $!'` + `detached: true` + `unref()` 방식으로 Node.js 와 분리 실행 — Node 재시작 후에도 학습 유지 |
+| `SimulApp/server.js` | 각 프로세스 PID 를 `codeset/logs/train.pid`, `merge.pid`, `gguf.pid` 파일에 저장 |
+| `SimulApp/server.js` | Python 출력을 `codeset/logs/train.log`, `merge.log`, `gguf.log` 파일로 리디렉션하고 1초마다 파일 감시(`startLogWatch`) |
+| `SimulApp/server.js` | 서버 시작 시 `recoverProcesses()` 호출 — PID 파일 확인 후 프로세스 재연결 또는 완료된 로그 복원 |
+| `SimulApp/server.js` | `currentProc` (프로세스 객체) → `currentProcPid` (PID 정수) 방식으로 프로세스 추적 전환, `isPidRunning()` 으로 생존 여부 확인 |
+| `SimulApp/public/index.html` | `init()` 함수 개선 — 재접속 시 `/api/run/status?offset=0` 응답의 로그를 즉시 화면에 표시 후 올바른 offset 으로 폴링 시작 (병합·GGUF 동일하게 적용) |
+
+**동작 흐름 (서버 재시작 후):**
+1. 서버 시작 → `recoverProcesses()` 실행
+2. PID 파일 존재 + 프로세스 살아있음 → 로그 파일 로드 + 파일 감시 재개
+3. PID 파일 존재 + 프로세스 없음 → 완료된 로그만 복원, PID 파일 삭제
+4. 브라우저 접속 → `init()` 에서 로그 즉시 렌더링 + 실행 중이면 폴링 자동 시작
+
+**추가 파일:** `codeset/logs/` 디렉터리 (서버 최초 시작 시 자동 생성)
+
+---
+
 ## 2026-06-23 (추가)
 
 ### SimulApp/server.js + SimulApp/public/index.html (학습 중지 버튼 + 시뮬레이션 테이블 데이터셋 컬럼)

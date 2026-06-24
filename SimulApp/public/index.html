@@ -1243,23 +1243,59 @@ function updateGgufBadge(running) {
   else         { badge.textContent = '대기 중';   badge.className = 'status-badge status-idle'; }
 }
 
-// ── 초기화 ───────────────────────────────────────
+// ── 초기화 (재접속 시 기존 로그·상태 즉시 복원) ──
 (async function init() {
   await loadConfig();
+
+  // 학습 상태 복원
   try {
     var r1 = await fetch('/api/run/status?offset=0');
     var j1 = await r1.json();
-    if (j1.running) { startPolling(); }
+    if (j1.logCount > 0) {
+      var box1 = document.getElementById('logBox');
+      box1.textContent = '';
+      var logs1 = j1.logs || [];
+      for (var i = 0; i < logs1.length; i++) { appendLog(logs1[i].msg); }
+      logOffset = j1.logCount;
+    }
+    if (j1.running) {
+      updateBadge(true);
+      if (!pollTimer) { pollTimer = setInterval(pollStatus, 2000); }
+    }
   } catch (e) {}
+
+  // 병합 상태 복원
   try {
     var r2 = await fetch('/api/merge/status?offset=0');
     var j2 = await r2.json();
-    if (j2.running) { startMergePolling(); }
+    if (j2.logCount > 0) {
+      var box2 = document.getElementById('mergeLogBox');
+      box2.textContent = '';
+      var logs2 = j2.logs || [];
+      for (var i = 0; i < logs2.length; i++) { appendMergeLog(logs2[i].msg); }
+      mergeLogOffset = j2.logCount;
+    }
+    if (j2.running) {
+      updateMergeBadge(true);
+      if (!mergePollTimer) { mergePollTimer = setInterval(pollMergeStatus, 2000); }
+    }
   } catch (e) {}
+
+  // GGUF 상태 복원
   try {
     var r3 = await fetch('/api/gguf/status?offset=0');
     var j3 = await r3.json();
-    if (j3.running) { startGgufPolling(); }
+    if (j3.logCount > 0) {
+      var box3 = document.getElementById('ggufLogBox');
+      box3.textContent = '';
+      var logs3 = j3.logs || [];
+      for (var i = 0; i < logs3.length; i++) { appendGgufLog(logs3[i].msg); }
+      ggufLogOffset = j3.logCount;
+    }
+    if (j3.running) {
+      updateGgufBadge(true);
+      if (!ggufPollTimer) { ggufPollTimer = setInterval(pollGgufStatus, 2000); }
+    }
   } catch (e) {}
 })();
 </script>
