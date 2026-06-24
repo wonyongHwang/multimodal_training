@@ -1,5 +1,34 @@
 # 수정 로그
 
+## 2026-06-25 (추가)
+
+### SimulApp — Ollama 테스트 탭 신규 추가
+
+**변경 파일:**
+
+| 파일 | 변경 내용 |
+|------|----------|
+| `SimulApp/ollama_service.py` | 신규 생성 — FastAPI 서비스 (포트 8001), .venvgguf 환경 |
+| `SimulApp/server.js` | `startOllamaService()` 추가 — 서버 시작 시 ollama_service.py 자동 실행 |
+| `SimulApp/public/index.html` | "🤖 Ollama 테스트" 탭 추가 |
+
+**ollama_service.py 주요 엔드포인트:**
+
+| 엔드포인트 | 역할 |
+|-----------|------|
+| `GET /gguf/list` | 프로젝트 내 .gguf 파일 스캔 (10MB 미만·llama.cpp 내부 제외) |
+| `POST /gguf/metadata` | GGUF 헤더에서 `general.architecture` 읽기 → Modelfile 초안 생성 |
+| `GET /ollama/models` | ollama list 결과 반환 |
+| `POST /ollama/register` | Modelfile 저장 + `ollama create` 실행 |
+| `DELETE /ollama/model/{name}` | `ollama rm` 실행 |
+| `POST /ollama/chat` | Ollama 채팅 — 이미지 업로드 시 base64 변환 후 멀티모달 전달 |
+
+**지원 아키텍처 자동 감지:** gemma3, gemma, gemma4, llama, qwen2, phi3, mistral, command-r
+
+**사용 전 준비:** `.venvgguf` 에 `fastapi uvicorn python-multipart` 설치 필요
+
+---
+
 ## 2026-06-24 (추가)
 
 ### ★02. 파인튜닝_멀티모달데이터_Gemma3.py / .ipynb (혼합 배치 collateFn 최종 수정)

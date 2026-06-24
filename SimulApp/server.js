@@ -61,6 +61,11 @@ if (fs.existsSync(VENVGGUF_PY_WIN))      { PYTHON_GGUF_CMD = VENVGGUF_PY_WIN; }
 else if (fs.existsSync(VENVGGUF_PY_NIX)) { PYTHON_GGUF_CMD = VENVGGUF_PY_NIX; }
 console.log(`GGUF Python 경로: ${PYTHON_GGUF_CMD}`);
 
+// Ollama 테스트 서비스 (ollama_service.py, 포트 8001)
+const OLLAMA_SERVICE_SCRIPT = path.join(__dirname, 'ollama_service.py');
+const OLLAMA_SERVICE_PORT   = 8001;
+let   ollamaServiceProc     = null;
+
 // ============================================================
 // DB 풀
 // ============================================================
@@ -303,6 +308,44 @@ let ggufLogWatcher  = null;
 // ============================================================
 // 서버 시작 시 프로세스 복구
 // ============================================================
+
+/**
+ * ollama_service.py 를 .venvgguf Python 으로 실행 (포트 8001)
+ * fastapi/uvicorn 미설치 시 경고만 출력하고 계속 진행
+ */
+function startOllamaService() {
+  if (!fs.existsSync(OLLAMA_SERVICE_SCRIPT)) {
+    console.warn('[Ollama서비스] ollama_service.py 없음 — 스킵');
+    return;
+  }
+  const pyCmd = fs.existsSync(VENVGGUF_PY_NIX) ? VENVGGUF_PY_NIX : 'python';
+  try {
+    ollamaServiceProc = spawn(pyCmd, ['-u', OLLAMA_SERVICE_SCRIPT], {
+      detached: false,
+      stdio:    ['ignore', 'ignore', 'pipe'],
+    });
+    ollamaServiceProc.stderr.on('data', (d) => {
+      const msg = d.toString().trim();
+      if (msg && !msg.includes('INFO') && !msg.includes('WARNING')) {
+        console.warn('[Ollama서비스]', msg);
+      }
+    });
+    ollamaServiceProc.on('error', (err) => {
+      console.warn(`[Ollama서비스] 시작 실패: ${err.message}`);
+      console.warn('[Ollama서비스] pip install fastapi uvicorn python-multipart 설치 필요');
+      ollamaServiceProc = null;
+    });
+    ollamaServiceProc.on('exit', (code) => {
+      if (code !== null && code !== 0) {
+        console.warn(`[Ollama서비스] 종료 (code=${code}) — Ollama 테스트 탭 사용 불가`);
+      }
+      ollamaServiceProc = null;
+    });
+    console.log(`[Ollama서비스] 시작됨 (PID=${ollamaServiceProc.pid}, port=${OLLAMA_SERVICE_PORT})`);
+  } catch (e) {
+    console.warn(`[Ollama서비스] spawn 실패: ${e.message}`);
+  }
+}
 
 function recoverProcesses() {
   // ── 파인튜닝 복구 ──
@@ -852,4 +895,10 @@ app.listen(PORT, () => {
   console.log(`codeset 경로: ${CODESET_DIR}`);
   console.log(`로그 저장 경로: ${LOGS_DIR}`);
   console.log(`DB: ${process.env.DB_HOST}/${process.env.DB_NAME}`);
+  startOllamaService();
 });
+
+// 서버 종료 시 Ollama 서비스도 함께 종료
+process.on('exit',   () => { if (ollamaServiceProc) ollamaServiceProc.kill(); });
+process.on('SIGINT',  () => { if (ollamaServiceProc) ollamaServiceProc.kill(); process.exit(0); });
+process.on('SIGTERM', () => { if (ollamaServiceProc) ollamaServiceProc.kill(); process.exit(0); });
