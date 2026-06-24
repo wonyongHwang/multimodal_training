@@ -458,7 +458,7 @@ def main():
     model = AutoModelForImageTextToText.from_pretrained(
         cfg['base_model'],
         # quantization_config=quantConfig,
-        device_map={"": 0},
+        device_map='auto',
         torch_dtype=torch.bfloat16,
         attn_implementation='eager',
         trust_remote_code=True,
