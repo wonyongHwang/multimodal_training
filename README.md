@@ -32,7 +32,7 @@ MySQL DB 테이블 생성
 
 | 항목 | 버전 |
 |------|------|
-| Python | **3.12.10** 필수 |
+| Python | **3.12 이상 ** |
 | Node.js | 18 이상 |
 | CUDA | 12.6 (NVIDIA GPU 필수) |
 | MySQL | 8.0 이상 |
@@ -102,11 +102,11 @@ pip install -r codeset/requirements_finetuneg3.txt
 
 | 패키지 | 버전 | 역할 |
 |--------|------|------|
-| transformers | 4.51.3 | 모델 로드/추론 |
-| peft | 0.15.2 | LoRA 파인튜닝 |
-| trl | 0.16.1 | SFT 학습 루프 |
-| accelerate | 1.6.0 | GPU 가속 |
-| bitsandbytes | 0.45.5 | 4bit 양자화 |
+| transformers | 4.53.0 | 모델 로드/추론 |
+| peft | 0.16.0 | LoRA 파인튜닝 |
+| trl | 0.17.0 | SFT 학습 루프 |
+| accelerate | 1.8.0 | GPU 가속 |
+| bitsandbytes | 0.47.0 | 4bit 양자화 |
 | datasets | 4.8.5 | 데이터 로드 |
 | pillow | 12.2.0 | 이미지 처리 |
 | mysql-connector-python | 9.3.0 | DB 연동 |
@@ -154,6 +154,7 @@ git clone https://github.com/ggerganov/llama.cpp
 pip install -r llama.cpp/requirements.txt
 
 가상환경 비활성화 및 multimodal_training 폴더로 다시 이동:
+
 ```bash
 deactivate
 cd ..
