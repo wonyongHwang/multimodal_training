@@ -72,17 +72,17 @@ python -m venv .venvg3
 source .venvg3/bin/activate
 ```
 
-#### PyTorch GPU 버전 설치 (CUDA 12.6)
+#### PyTorch GPU 버전 설치 (CUDA 12.6, 13.0 중 택 1)
 브랙웰 사용이유 : https://docs.vllm.ai/en/v0.11.1/getting_started/installation/gpu/#create-a-new-python-environment
 
 
 ```bash
-# B200 등 블랙웰 최신 버전인 경우 아래 명령어 실행
+# (선택#1) B200 등 블랙웰 최신 버전인 경우 아래 명령어 실행
 pip install torch torchvision --index-url https://download.pytorch.org/whl/cu130
 ```
 
 ```bash
-# 일반 GPU 경우 경우 아래 명령어 실행
+# (선택#2) 일반 GPU 경우 경우 아래 명령어 실행
 pip install torch torchvision --index-url https://download.pytorch.org/whl/cu126
 ```
 
@@ -166,7 +166,7 @@ cd ..
 ## STEP 3 — 환경 변수 설정
 
 > **사전 조건:** MySQL DB가 먼저 구축되어 있어야 합니다.
-
+설치관련 링크 참고: https://vo.la/EHf35lO
 `codeset/.env.example`을 복사하여 `codeset/.env`를 생성합니다.
 
 **Windows:**
