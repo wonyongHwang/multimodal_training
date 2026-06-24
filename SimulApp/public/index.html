@@ -470,6 +470,7 @@
       <button class="btn btn-save"  onclick="saveConfig()">설정 저장 (.env)</button>
       <button class="btn btn-start" onclick="startTraining()">▶ 학습 시작</button>
       <button id="stopBtn" class="btn btn-stop" onclick="stopTraining()" style="display:none;">■ 학습 중지</button>
+      <button class="btn" style="background:#546e7a; color:#fff;" onclick="clearLog('logBox')">🗑 로그 지우기</button>
     </div>
     <br/>
     <div id="logBox">로그가 여기에 표시됩니다...</div>
@@ -628,6 +629,7 @@
     <div class="btn-row">
       <button class="btn btn-save"  onclick="saveMergeConfig()">설정 저장 (.env)</button>
       <button class="btn btn-start" onclick="startMerge()">🔀 병합 시작</button>
+      <button class="btn" style="background:#546e7a; color:#fff;" onclick="clearLog('mergeLogBox')">🗑 로그 지우기</button>
     </div>
     <br/>
     <div id="mergeLogBox"
@@ -759,6 +761,7 @@
     <div class="btn-row">
       <button class="btn btn-save"  onclick="saveGgufConfig()">설정 저장 (.env)</button>
       <button class="btn btn-start" onclick="startGguf()">📦 변환 시작</button>
+      <button class="btn" style="background:#546e7a; color:#fff;" onclick="clearLog('ggufLogBox')">🗑 로그 지우기</button>
     </div>
     <br/>
     <div id="ggufLogBox"
@@ -771,6 +774,11 @@ GGUF 변환 로그가 여기에 표시됩니다...</div>
 
 <script>
 'use strict';
+
+// ── 로그 지우기 ──────────────────────────────────
+function clearLog(boxId) {
+  document.getElementById(boxId).textContent = '';
+}
 
 // ── 탭 전환 ──────────────────────────────────────
 function switchTab(name) {

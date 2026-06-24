@@ -1,5 +1,29 @@
 # 수정 로그
 
+## 2026-06-24 (추가)
+
+### ★02. 파인튜닝_멀티모달데이터_Gemma3.py / .ipynb (혼합 배치 collateFn 최종 수정)
+
+**문제 1차:** `PER_DEVICE_TRAIN_BATCH_SIZE` 를 2 이상으로 올리면 `ValueError: Invalid input type` 발생 (빈 리스트 `[]` 구조)
+**문제 2차:** flat list `[img1, img3]` 방식 → `ValueError: Received inconsistently sized batches of images (1) and text (N)` — `make_nested_list_of_images` 가 PIL Image 리스트 전체를 1개 배치로 인식
+**문제 3차:** None 방식 `[img, None, ...]` → `is_valid_image(None) = False` 로 여전히 에러
+
+**원인 최종 (확정):** `make_nested_list_of_images([img1, img2, ..., imgN])` 은 PIL Image 리스트를 "이미지 N개짜리 배치 1건" 으로 해석 → `len(batched_images) = 1 ≠ len(texts) = N` → 에러. 올바른 구조는 `[[img1], [img2], ..., [imgN]]` (샘플당 [img] 중첩).
+
+**변경 내용 (최종 v3):**
+
+| 파일 | 위치 | 변경 내용 |
+|------|------|----------|
+| `★02. 파인튜닝_멀티모달데이터_Gemma3.py` | `getCollateFn` | `nestedImages` 에 `[sampleImage]` (중첩 리스트) 또는 `None` 추가. 전부-이미지/전부-텍스트/혼합 3가지 경우 분기 처리 |
+| `★02. 파인튜닝_멀티모달데이터_Gemma3.py` | `_mergeMixedBatch` | 혼합 배치용 내부 함수 추가 — 이미지 서브배치와 텍스트 서브배치를 패딩 맞춰 원본 순서로 병합 |
+| `★02. 파인튜닝_멀티모달데이터_Gemma3.ipynb` | Cell 15 (`collate_fn`) | 동일하게 반영 |
+
+**동작 원리:**
+- 전부-이미지 배치: `images = [[img1],[img2],...]` → `make_nested_list_of_images` 가 각 `[img_i]` 를 별도 샘플로 인식 → `len = N == len(texts) = N`
+- 혼합 배치: 이미지 샘플/텍스트 샘플 분리 → 각각 `processor()` 호출 → `_mergeMixedBatch` 로 원본 인덱스 순서로 텐서 합산
+
+---
+
 ## 2026-06-24
 
 ### SimulApp/server.js + SimulApp/public/index.html (프로세스 지속성 및 로그 영구 보존)
