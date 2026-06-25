@@ -25,6 +25,8 @@
       border-bottom: 3px solid transparent; margin-bottom: -2px;
     }
     .tab-btn.active { color: #1a1a2e; border-bottom-color: #5c6bc0; font-weight: 600; }
+    .tab-btn:disabled { color: #bbb; cursor: not-allowed; opacity: 0.6; }
+    .tab-btn:disabled:hover { opacity: 0.6; }
 
     .tab-panel { display: none; padding: 24px; max-width: 1200px; margin: 0 auto; }
     .tab-panel.active { display: block; }
@@ -234,7 +236,7 @@
   <button class="tab-btn"        onclick="switchTab('res')">📊 시뮬레이션 결과</button>
   <button class="tab-btn"        onclick="switchTab('mrg')">🔀 모델 병합</button>
   <button class="tab-btn"        onclick="switchTab('gguf')">📦 GGUF 변환</button>
-  <button class="tab-btn"        onclick="switchTab('ollama')">🤖 Ollama 테스트</button>
+  <button id="ollamaTabBtn" class="tab-btn" onclick="switchTab('ollama')">🤖 Ollama 테스트</button>
 </div>
 
 <!-- ============================================================ -->
@@ -930,10 +932,11 @@ function switchTab(name) {
     refreshGgufList();
     refreshOllamaModels();
   }
-  if      (name === 'cfg')  { buttons[0].classList.add('active'); }
-  else if (name === 'res')  { buttons[1].classList.add('active'); loadSimulations(); }
-  else if (name === 'mrg')  { buttons[2].classList.add('active'); loadMergeConfig(); }
-  else if (name === 'gguf') { buttons[3].classList.add('active'); loadGgufConfig(); }
+  if      (name === 'cfg')    { buttons[0].classList.add('active'); }
+  else if (name === 'res')    { buttons[1].classList.add('active'); loadSimulations(); }
+  else if (name === 'mrg')    { buttons[2].classList.add('active'); loadMergeConfig(); }
+  else if (name === 'gguf')   { buttons[3].classList.add('active'); loadGgufConfig(); }
+  else if (name === 'ollama') { buttons[4].classList.add('active'); }
 }
 
 // ── 설정 로드 ────────────────────────────────────
@@ -1401,15 +1404,28 @@ var OLLAMA_API = 'http://localhost:8001';
 
 // ── 서비스 연결 확인 ─────────────────────────────
 async function checkOllamaService() {
-  var badge = document.getElementById('ollamaServiceBadge');
+  var badge  = document.getElementById('ollamaServiceBadge');
+  var tabBtn = document.getElementById('ollamaTabBtn');
   try {
     var r = await fetch(OLLAMA_API + '/gguf/list', { signal: AbortSignal.timeout(3000) });
     var j = await r.json();
     badge.textContent = '● 서비스 정상';
     badge.className   = 'service-ok';
+    if (tabBtn) {
+      tabBtn.disabled   = false;
+      tabBtn.title      = '';
+      tabBtn.textContent = '🤖 Ollama 테스트';
+    }
+    return true;
   } catch (e) {
     badge.textContent = '● 서비스 오프라인 (포트 8001)';
     badge.className   = 'service-err';
+    if (tabBtn) {
+      tabBtn.disabled   = true;
+      tabBtn.title      = 'Ollama 서비스 미실행 — fastapi, uvicorn, Pillow, httpx, python-multipart 설치 후 서버 재시작';
+      tabBtn.textContent = '🤖 Ollama 테스트 (미설치)';
+    }
+    return false;
   }
 }
 
@@ -1674,6 +1690,18 @@ async function sendChat() {
     if (j3.running) {
       updateGgufBadge(true);
       if (!ggufPollTimer) { ggufPollTimer = setInterval(pollGgufStatus, 2000); }
+    }
+  } catch (e) {}
+
+  // Ollama 서비스 초기 상태 확인 — 미실행 시 탭 버튼 비활성화
+  try {
+    var r4   = await fetch('/api/ollama/status');
+    var j4   = await r4.json();
+    var oBtn = document.getElementById('ollamaTabBtn');
+    if (oBtn && !j4.running) {
+      oBtn.disabled   = true;
+      oBtn.title      = 'Ollama 서비스 미실행 — fastapi, uvicorn, Pillow, httpx, python-multipart 설치 후 서버 재시작';
+      oBtn.textContent = '🤖 Ollama 테스트 (미설치)';
     }
   } catch (e) {}
 })();

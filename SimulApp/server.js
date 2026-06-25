@@ -405,6 +405,15 @@ app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
 // ────────────────────────────────────────────────
+// GET /api/ollama/status
+// ────────────────────────────────────────────────
+
+app.get('/api/ollama/status', (req, res) => {
+  const running = ollamaServiceProc !== null && ollamaServiceProc.exitCode === null;
+  res.json({ success: true, running });
+});
+
+// ────────────────────────────────────────────────
 // GET /api/db/status
 // ────────────────────────────────────────────────
 
