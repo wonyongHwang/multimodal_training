@@ -1,5 +1,32 @@
 # 수정 로그
 
+## 2026-06-25 (추가 2)
+
+### ★03. 데이터병합 및 저장_멀티모달데이터_Gemma3.py / .ipynb (safetensors 0.8.0 shared tensor 에러 수정 + Hub 업로드 방식 변경)
+
+**문제:** `merge_and_unload()` 후 `save_pretrained()` 호출 시 `safetensors 0.8.0` 에서 shared tensor 에러 발생
+- Gemma3의 `lm_head.weight`와 `embed_tokens.weight`가 동일 메모리를 공유 (tie_word_embeddings=True)
+- 구버전 safetensors는 묵인, 0.8.0부터 strict 검사로 에러 → 업그레이드 이후 신규 발생
+
+**변경 내용:**
+
+| 파일 | 위치 | 변경 내용 |
+|------|------|----------|
+| `★03. 데이터병합 및 저장_멀티모달데이터_Gemma3.py` | import | `from huggingface_hub import login, HfApi` (`HfApi` 추가) |
+| `★03. 데이터병합 및 저장_멀티모달데이터_Gemma3.py` | `saveMerged()` | 양자화 잔재 검증 로직 이동 + `mergedModel.tie_weights()` 추가 (save 직전) |
+| `★03. 데이터병합 및 저장_멀티모달데이터_Gemma3.py` | `uploadToHub()` | 시그니처 변경 (`mergedModel, processor` 제거 → `mergedLocalDir` 만 받음), `push_to_hub` → `HfApi.upload_folder()` 로 변경, 업로드 완료 후 `shutil.rmtree()` 로 로컬 삭제 |
+| `★03_데이터병합 및 저장_멀티모달데이터_Gemma3.ipynb` | cell `7b03fc04` | `import shutil`, `HfApi` 임포트 추가 |
+| `★03_데이터병합 및 저장_멀티모달데이터_Gemma3.ipynb` | cell `6b70c0da` | 양자화 잔재 검증 + `merged_model.tie_weights()` 추가 (save 직전) |
+| `★03_데이터병합 및 저장_멀티모달데이터_Gemma3.ipynb` | cell `c83c9c93` | `HfApi.upload_folder()` + `shutil.rmtree()` 로 변경 |
+
+**동작 흐름 (변경 후):**
+1. `saveMerged()`: 양자화 검증 → `tie_weights()` → `save_pretrained()` → 로컬 저장 완료
+2. `uploadToHub()`: `HfApi.upload_folder()` → Hub 업로드 → `shutil.rmtree()` 로컬 삭제
+
+**`tie_weights()` 설명:** PEFT merge 후 `_tied_weights_keys` 가 초기화될 수 있어, transformers가 중복 가중치를 state_dict에서 제거하지 못하는 문제 방지. `tie_weights()` 호출로 명시적 재등록.
+
+---
+
 ## 2026-06-25 (추가)
 
 ### SimulApp — Ollama 테스트 탭 신규 추가
