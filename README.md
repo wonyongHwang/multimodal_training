@@ -106,7 +106,7 @@ pip install -r codeset/requirements_finetuneg3.txt
 | peft | 0.16.0 | LoRA 파인튜닝 |
 | trl | 0.17.0 | SFT 학습 루프 |
 | accelerate | 1.8.0 | GPU 가속 |
-| bitsandbytes | 0.47.0 | 4bit 양자화 |
+| bitsandbytes | 0.49.2 | 4bit 양자화 |
 | datasets | 4.8.5 | 데이터 로드 |
 | pillow | 12.2.0 | 이미지 처리 |
 | mysql-connector-python | 9.3.0 | DB 연동 |
@@ -285,6 +285,13 @@ GGUF Python 경로: ../.venvgguf/Scripts/python.exe
 
 브라우저에서 **http://localhost:3000** 접속
 
+
+추가로 ollama 메뉴 사용 시
+
+```bash
+# gcsudo 사용자: curl -fsSL https://ollama.com/install.sh | gcsudo sh
+curl -fsSL https://ollama.com/install.sh | sudo sh
+```
 ---
 
 ## STEP 6 — 웹 UI 사용 순서
