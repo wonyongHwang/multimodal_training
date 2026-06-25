@@ -1,0 +1,11 @@
+FROM /home/wyhwang/multimodal_training/codeset/model.gguf
+
+TEMPLATE """{{ if .System }}<start_of_turn>user
+{{ .System }}<end_of_turn>
+{{ end }}<start_of_turn>user
+{{ .Prompt }}<end_of_turn>
+<start_of_turn>model
+{{ .Response }}<end_of_turn>
+"""
+PARAMETER stop "<end_of_turn>"
+PARAMETER num_ctx 4096
