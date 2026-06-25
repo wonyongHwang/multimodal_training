@@ -285,13 +285,6 @@ GGUF Python 경로: ../.venvgguf/Scripts/python.exe
 
 브라우저에서 **http://localhost:3000** 접속
 
-
-추가로 ollama 메뉴 사용 시
-
-```bash
-# gcsudo 사용자: curl -fsSL https://ollama.com/install.sh | gcsudo sh
-curl -fsSL https://ollama.com/install.sh | sudo sh
-```
 ---
 
 ## STEP 6 — 웹 UI 사용 순서

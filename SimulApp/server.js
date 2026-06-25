@@ -15,7 +15,7 @@
 const express = require('express');
 const path    = require('path');
 const fs      = require('fs');
-const { spawn } = require('child_process');
+const { spawn, spawnSync } = require('child_process');
 const mysql2  = require('mysql2/promise');
 require('dotenv').config({ path: path.join(__dirname, '..', 'codeset', '.env') });
 
@@ -61,10 +61,11 @@ if (fs.existsSync(VENVGGUF_PY_WIN))      { PYTHON_GGUF_CMD = VENVGGUF_PY_WIN; }
 else if (fs.existsSync(VENVGGUF_PY_NIX)) { PYTHON_GGUF_CMD = VENVGGUF_PY_NIX; }
 console.log(`GGUF Python 경로: ${PYTHON_GGUF_CMD}`);
 
-// Ollama 테스트 서비스 (ollama_service.py, 포트 8001)
-const OLLAMA_SERVICE_SCRIPT = path.join(__dirname, 'ollama_service.py');
-const OLLAMA_SERVICE_PORT   = 8001;
-let   ollamaServiceProc     = null;
+// 멀티모달 추론 서비스 (inference_service.py, 포트 9999, .venvg3)
+const INFER_SERVICE_SCRIPT = path.join(__dirname, 'inference_service.py');
+const INFER_SERVICE_PORT   = 9999;
+let   inferServiceProc     = null;
+let   inferServiceAvailable = false;  // fastapi/uvicorn 설치 확인 후 true 로 변경
 
 // ============================================================
 // DB 풀
@@ -310,40 +311,50 @@ let ggufLogWatcher  = null;
 // ============================================================
 
 /**
- * ollama_service.py 를 .venvgguf Python 으로 실행 (포트 8001)
- * fastapi/uvicorn 미설치 시 경고만 출력하고 계속 진행
+ * inference_service.py 를 .venvg3 Python 으로 실행 (포트 9999)
+ * fastapi/uvicorn 미설치 시 에러 없이 스킵 → 탭 버튼만 비활성화
  */
-function startOllamaService() {
-  if (!fs.existsSync(OLLAMA_SERVICE_SCRIPT)) {
-    console.warn('[Ollama서비스] ollama_service.py 없음 — 스킵');
+function startInferService() {
+  if (!fs.existsSync(INFER_SERVICE_SCRIPT)) {
+    console.warn('[추론서비스] inference_service.py 없음 — 스킵');
     return;
   }
-  const pyCmd = fs.existsSync(VENVGGUF_PY_NIX) ? VENVGGUF_PY_NIX : 'python';
+
+  // fastapi, uvicorn 설치 여부 사전 확인
+  const check = spawnSync(PYTHON_CMD, ['-c', 'import fastapi, uvicorn, multipart'], { encoding: 'utf8' });
+  if (check.status !== 0) {
+    console.warn('[추론서비스] fastapi/uvicorn/python-multipart 미설치 — 멀티모달 추론 탭 비활성화');
+    console.warn('[추론서비스] 설치: pip install fastapi uvicorn python-multipart');
+    inferServiceAvailable = false;
+    return;
+  }
+
+  inferServiceAvailable = true;
+  const pyCmd = PYTHON_CMD;
   try {
-    ollamaServiceProc = spawn(pyCmd, ['-u', OLLAMA_SERVICE_SCRIPT], {
+    inferServiceProc = spawn(pyCmd, ['-u', INFER_SERVICE_SCRIPT], {
       detached: false,
       stdio:    ['ignore', 'ignore', 'pipe'],
     });
-    ollamaServiceProc.stderr.on('data', (d) => {
+    inferServiceProc.stderr.on('data', (d) => {
       const msg = d.toString().trim();
       if (msg && !msg.includes('INFO') && !msg.includes('WARNING')) {
-        console.warn('[Ollama서비스]', msg);
+        console.warn('[추론서비스]', msg);
       }
     });
-    ollamaServiceProc.on('error', (err) => {
-      console.warn(`[Ollama서비스] 시작 실패: ${err.message}`);
-      console.warn('[Ollama서비스] pip install fastapi uvicorn python-multipart 설치 필요');
-      ollamaServiceProc = null;
+    inferServiceProc.on('error', (err) => {
+      console.warn(`[추론서비스] 시작 실패: ${err.message}`);
+      inferServiceProc = null;
     });
-    ollamaServiceProc.on('exit', (code) => {
+    inferServiceProc.on('exit', (code) => {
       if (code !== null && code !== 0) {
-        console.warn(`[Ollama서비스] 종료 (code=${code}) — Ollama 테스트 탭 사용 불가`);
+        console.warn(`[추론서비스] 종료 (code=${code})`);
       }
-      ollamaServiceProc = null;
+      inferServiceProc = null;
     });
-    console.log(`[Ollama서비스] 시작됨 (PID=${ollamaServiceProc.pid}, port=${OLLAMA_SERVICE_PORT})`);
+    console.log(`[추론서비스] 시작됨 (PID=${inferServiceProc.pid}, port=${INFER_SERVICE_PORT})`);
   } catch (e) {
-    console.warn(`[Ollama서비스] spawn 실패: ${e.message}`);
+    console.warn(`[추론서비스] spawn 실패: ${e.message}`);
   }
 }
 
@@ -405,12 +416,19 @@ app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
 // ────────────────────────────────────────────────
-// GET /api/ollama/status
+// GET /api/infer/status
 // ────────────────────────────────────────────────
 
-app.get('/api/ollama/status', (req, res) => {
-  const running = ollamaServiceProc !== null && ollamaServiceProc.exitCode === null;
-  res.json({ success: true, running });
+app.get('/api/infer/status', async (req, res) => {
+  if (!inferServiceAvailable) {
+    return res.json({ success: true, running: false, reason: 'fastapi/uvicorn/python-multipart 미설치' });
+  }
+  try {
+    const resp = await fetch(`http://127.0.0.1:${INFER_SERVICE_PORT}/status`, { signal: AbortSignal.timeout(2000) });
+    res.json({ success: true, running: resp.ok });
+  } catch {
+    res.json({ success: true, running: false });
+  }
 });
 
 // ────────────────────────────────────────────────
@@ -904,10 +922,10 @@ app.listen(PORT, () => {
   console.log(`codeset 경로: ${CODESET_DIR}`);
   console.log(`로그 저장 경로: ${LOGS_DIR}`);
   console.log(`DB: ${process.env.DB_HOST}/${process.env.DB_NAME}`);
-  startOllamaService();
+  startInferService();
 });
 
-// 서버 종료 시 Ollama 서비스도 함께 종료
-process.on('exit',   () => { if (ollamaServiceProc) ollamaServiceProc.kill(); });
-process.on('SIGINT',  () => { if (ollamaServiceProc) ollamaServiceProc.kill(); process.exit(0); });
-process.on('SIGTERM', () => { if (ollamaServiceProc) ollamaServiceProc.kill(); process.exit(0); });
+// 서버 종료 시 추론 서비스도 함께 종료
+process.on('exit',   () => { if (inferServiceProc) inferServiceProc.kill(); });
+process.on('SIGINT',  () => { if (inferServiceProc) inferServiceProc.kill(); process.exit(0); });
+process.on('SIGTERM', () => { if (inferServiceProc) inferServiceProc.kill(); process.exit(0); });

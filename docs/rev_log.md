@@ -1,5 +1,40 @@
 # 수정 로그
 
+## 2026-06-25 (추가 4)
+
+### SimulApp — Ollama 잔재 제거 + inference_service.py 코딩 스타일 정비
+
+**변경 파일:**
+
+| 파일 | 변경 내용 |
+|------|----------|
+| `SimulApp/ollama_service.py` | 삭제 (더 이상 사용 안 함) |
+| `SimulApp/server.js` | `OLLAMA_SERVICE_SCRIPT/PORT` → `INFER_SERVICE_SCRIPT/PORT` 이름 변경, `ollamaServiceProc` → `inferServiceProc`, `startOllamaService()` → `startInferService()`, `/api/ollama/status` 라우트 → `/api/infer/status`, 콘솔 로그 "Ollama서비스" → "추론서비스" |
+| `SimulApp/public/index.html` | 초기화 시 `/api/ollama/status` → `/api/infer/status` 호출 변경 |
+| `SimulApp/inference_service.py` | 추론 로직을 `inferGemma3()` 함수로 분리, `pydantic.BaseModel`(`StatusResponse`) 추가, `for i in range(0, len(...))` 루프 스타일 적용, 모든 함수에 docstring 추가 |
+
+---
+
+## 2026-06-25 (추가 3)
+
+### SimulApp — Ollama 탭 → 멀티모달 추론 서비스 전환
+
+**변경 배경:** Ollama + GGUF 방식은 멀티모달(이미지+텍스트) 미지원. `.venvg3` 환경의 HuggingFace 패키지를 직접 활용해 파인튜닝 병합 모델을 추론.
+
+**변경 파일:**
+
+| 파일 | 변경 내용 |
+|------|----------|
+| `SimulApp/inference_service.py` | 신규 생성 — FastAPI 포트 9999, `.venvg3` 환경, `/status` + `/chat` 엔드포인트, `.env`의 `MERGED_MODEL_REPO` 로드 |
+| `SimulApp/server.js` | `OLLAMA_SERVICE_SCRIPT` → `inference_service.py` 변경, `startOllamaService()` Python 실행 경로 `VENVGGUF_PY_NIX` → `PYTHON_CMD`(.venvg3) 변경, `/api/ollama/status` health check URL `/gguf/list` → `/status` 변경 |
+| `SimulApp/public/index.html` | 탭 버튼명 "Ollama 테스트" → "멀티모달 추론" 변경, 탭 내용 재구성 (GGUF 등록 카드①②제거 → 채팅 단일 카드, 모델 선택 제거, maxNewTokens/temperature 추가), `checkOllamaService()` → `/status` 엔드포인트 호출로 변경, `sendChat()` → `/chat` 엔드포인트 호출 (modelName 파라미터 제거) |
+
+**엔드포인트 변경:**
+- `GET /status` → `{success, status, ready, model}` (status: loading/ready/no_model/error)
+- `POST /chat` → FormData: message, systemPrompt, image(선택), maxNewTokens, temperature
+
+---
+
 ## 2026-06-25 (추가 2)
 
 ### ★03. 데이터병합 및 저장_멀티모달데이터_Gemma3.py / .ipynb (safetensors 0.8.0 shared tensor 에러 수정 + Hub 업로드 방식 변경)

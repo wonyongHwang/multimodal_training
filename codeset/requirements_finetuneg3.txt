@@ -11,3 +11,6 @@ pillow==12.2.0
 dotenv==0.9.9
 mysql-connector-python==9.3.0
 matplotlib==3.10.9
+fastapi==0.115.14
+uvicorn==0.34.3
+python-multipart==0.0.20

@@ -236,7 +236,7 @@
   <button class="tab-btn"        onclick="switchTab('res')">📊 시뮬레이션 결과</button>
   <button class="tab-btn"        onclick="switchTab('mrg')">🔀 모델 병합</button>
   <button class="tab-btn"        onclick="switchTab('gguf')">📦 GGUF 변환</button>
-  <button id="ollamaTabBtn" class="tab-btn" onclick="switchTab('ollama')">🤖 Ollama 테스트</button>
+  <button id="ollamaTabBtn" class="tab-btn" onclick="switchTab('ollama')">🤖 멀티모달 추론</button>
 </div>
 
 <!-- ============================================================ -->
@@ -814,76 +814,40 @@ GGUF 변환 로그가 여기에 표시됩니다...</div>
 </div>
 
 <!-- ============================================================ -->
-<!-- 탭 5: Ollama 테스트                                         -->
+<!-- 탭 5: 멀티모달 추론 테스트                                    -->
 <!-- ============================================================ -->
 <div id="tab-ollama" class="tab-panel">
 
   <!-- 서비스 상태 표시 -->
   <div style="display:flex; align-items:center; margin-bottom:16px;">
-    <span style="font-size:0.9rem; color:#555;">Ollama 테스트 서비스 (포트 8001)</span>
+    <span style="font-size:0.9rem; color:#555;">멀티모달 추론 서비스 (포트 9999)</span>
     <span id="ollamaServiceBadge" class="service-err">연결 확인 중...</span>
     <button class="btn" style="padding:5px 12px; margin-left:8px; background:#e8eaf6; color:#5c6bc0;" onclick="checkOllamaService()">🔄 확인</button>
+    <span id="modelStatusBadge" style="margin-left:12px; font-size:0.82rem; color:#888;"></span>
   </div>
 
-  <!-- ① GGUF → Ollama 등록 -->
+  <!-- 채팅 테스트 -->
   <div class="card">
-    <h2>📦 GGUF 파일 → Ollama 등록</h2>
-
-    <div style="display:flex; gap:8px; margin-bottom:12px;">
-      <select id="ggufFileSelect" style="flex:1; padding:8px; border:1px solid #ddd; border-radius:6px; font-size:0.88rem;" onchange="onGgufSelected()">
-        <option value="">GGUF 파일 선택...</option>
-      </select>
-      <button class="btn" style="padding:8px 14px; background:#e8eaf6; color:#5c6bc0;" onclick="refreshGgufList()">🔄</button>
-    </div>
-
-    <div id="archBadge" style="margin-bottom:12px; min-height:22px;"></div>
-
-    <div class="form-group" style="margin-bottom:12px;">
-      <label class="field-label">Ollama 등록 이름</label>
-      <input type="text" id="ollamaModelName" placeholder="예: gemma3-ocr (영문·숫자·하이픈만 사용)" style="max-width:360px;">
-    </div>
-
-    <div class="form-group" style="margin-bottom:12px;">
-      <label class="field-label">
-        Modelfile
-        <span style="font-size:0.78rem; color:#999; font-weight:400;">— 아키텍처 자동 감지 후 생성됨, 직접 편집 가능</span>
-      </label>
-      <textarea id="modelfileContent" rows="13"></textarea>
-    </div>
-
-    <div class="btn-row">
-      <button class="btn btn-start" onclick="registerOllamaModel()" id="registerBtn">📦 Ollama 등록</button>
-    </div>
-    <pre id="registerLog">등록 로그가 여기에 표시됩니다...</pre>
-  </div>
-
-  <!-- ② 등록된 모델 목록 -->
-  <div class="card">
-    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
-      <h2 style="margin-bottom:0;">📋 등록된 Ollama 모델</h2>
-      <button class="btn" style="padding:6px 14px; background:#e8eaf6; color:#5c6bc0;" onclick="refreshOllamaModels()">🔄 새로고침</button>
-    </div>
-    <div id="ollamaModelList"><span style="color:#aaa; font-size:0.9rem;">새로고침 버튼을 클릭하세요</span></div>
-  </div>
-
-  <!-- ③ 채팅 테스트 -->
-  <div class="card">
-    <h2>💬 채팅 테스트 <span style="font-size:0.82rem; color:#888; font-weight:400;">— 이미지 첨부 시 멀티모달 모델 필요</span></h2>
-
-    <div class="form-group" style="margin-bottom:12px;">
-      <label class="field-label">모델 선택</label>
-      <select id="chatModelSelect" style="max-width:360px; padding:8px; border:1px solid #ddd; border-radius:6px; font-size:0.88rem;">
-        <option value="">모델 선택...</option>
-      </select>
-    </div>
+    <h2>💬 채팅 테스트 <span style="font-size:0.82rem; color:#888; font-weight:400;">— 이미지 첨부 시 멀티모달 추론</span></h2>
 
     <div class="form-group" style="margin-bottom:12px;">
       <label class="field-label">시스템 프롬프트 <span style="font-size:0.78rem; color:#999; font-weight:400;">(선택)</span></label>
       <textarea id="systemPrompt" rows="2" style="padding:8px; border:1px solid #ddd; border-radius:6px; font-size:0.88rem; resize:vertical;" placeholder="예: 당신은 OCR 전문가입니다. 이미지의 텍스트를 정확히 인식하세요."></textarea>
     </div>
 
+    <div style="display:flex; gap:16px; margin-bottom:12px;">
+      <div style="flex:1;">
+        <label class="field-label">최대 토큰 수</label>
+        <input type="number" id="maxNewTokens" value="256" min="32" max="2048" style="width:100%; padding:8px; border:1px solid #ddd; border-radius:6px; font-size:0.88rem;">
+      </div>
+      <div style="flex:1;">
+        <label class="field-label">Temperature</label>
+        <input type="number" id="inferTemperature" value="0.2" min="0" max="2" step="0.05" style="width:100%; padding:8px; border:1px solid #ddd; border-radius:6px; font-size:0.88rem;">
+      </div>
+    </div>
+
     <div style="margin-bottom:12px;">
-      <label class="field-label" style="margin-bottom:6px;">이미지 첨부</label>
+      <label class="field-label" style="margin-bottom:6px;">이미지 첨부 <span style="font-size:0.78rem; color:#999; font-weight:400;">(선택)</span></label>
       <div class="img-preview-wrap">
         <label style="display:inline-flex; align-items:center; gap:6px; padding:8px 16px; background:#e8eaf6; border-radius:6px; cursor:pointer; font-size:0.88rem; color:#5c6bc0; font-weight:600;">
           📎 이미지 선택
@@ -929,8 +893,6 @@ function switchTab(name) {
 
   if (name === 'ollama') {
     checkOllamaService();
-    refreshGgufList();
-    refreshOllamaModels();
   }
   if      (name === 'cfg')    { buttons[0].classList.add('active'); }
   else if (name === 'res')    { buttons[1].classList.add('active'); loadSimulations(); }
@@ -1397,169 +1359,52 @@ function updateGgufBadge(running) {
 }
 
 // ============================================================
-// Ollama 테스트 탭
+// 멀티모달 추론 탭
 // ============================================================
 
-var OLLAMA_API = 'http://localhost:8001';
+var OLLAMA_API = window.location.protocol + '//' + window.location.hostname + ':9999';
 
 // ── 서비스 연결 확인 ─────────────────────────────
 async function checkOllamaService() {
-  var badge  = document.getElementById('ollamaServiceBadge');
-  var tabBtn = document.getElementById('ollamaTabBtn');
+  var badge       = document.getElementById('ollamaServiceBadge');
+  var modelBadge  = document.getElementById('modelStatusBadge');
+  var tabBtn      = document.getElementById('ollamaTabBtn');
   try {
-    var r = await fetch(OLLAMA_API + '/gguf/list', { signal: AbortSignal.timeout(3000) });
+    var r = await fetch(OLLAMA_API + '/status', { signal: AbortSignal.timeout(3000) });
     var j = await r.json();
     badge.textContent = '● 서비스 정상';
     badge.className   = 'service-ok';
     if (tabBtn) {
-      tabBtn.disabled   = false;
-      tabBtn.title      = '';
-      tabBtn.textContent = '🤖 Ollama 테스트';
+      tabBtn.disabled    = false;
+      tabBtn.title       = '';
+      tabBtn.textContent = '🤖 멀티모달 추론';
+    }
+    if (modelBadge) {
+      if (j.status === 'ready') {
+        modelBadge.textContent = '모델 로드 완료: ' + (j.model || '');
+        modelBadge.style.color = '#388e3c';
+      } else if (j.status === 'loading') {
+        modelBadge.textContent = '모델 로딩 중...';
+        modelBadge.style.color = '#f57c00';
+      } else if (j.status === 'no_model') {
+        modelBadge.textContent = '.env의 MERGED_MODEL_REPO 미설정';
+        modelBadge.style.color = '#c62828';
+      } else {
+        modelBadge.textContent = '모델 로드 실패 (서버 로그 확인)';
+        modelBadge.style.color = '#c62828';
+      }
     }
     return true;
   } catch (e) {
-    badge.textContent = '● 서비스 오프라인 (포트 8001)';
+    badge.textContent = '● 서비스 오프라인 (포트 9999)';
     badge.className   = 'service-err';
     if (tabBtn) {
-      tabBtn.disabled   = true;
-      tabBtn.title      = 'Ollama 서비스 미실행 — fastapi, uvicorn, Pillow, httpx, python-multipart 설치 후 서버 재시작';
-      tabBtn.textContent = '🤖 Ollama 테스트 (미설치)';
+      tabBtn.disabled    = true;
+      tabBtn.title       = '추론 서비스 미실행 — 서버 재시작 필요';
+      tabBtn.textContent = '🤖 멀티모달 추론 (미실행)';
     }
+    if (modelBadge) { modelBadge.textContent = ''; }
     return false;
-  }
-}
-
-// ── GGUF 파일 목록 새로고침 ──────────────────────
-async function refreshGgufList() {
-  try {
-    var r   = await fetch(OLLAMA_API + '/gguf/list');
-    var j   = await r.json();
-    var sel = document.getElementById('ggufFileSelect');
-    sel.innerHTML = '<option value="">GGUF 파일 선택...</option>';
-    if (!j.success || !j.files || j.files.length === 0) {
-      sel.innerHTML = '<option value="">GGUF 파일 없음 (변환 후 다시 시도)</option>';
-      return;
-    }
-    for (var i = 0; i < j.files.length; i++) {
-      var opt       = document.createElement('option');
-      opt.value     = j.files[i].path;
-      opt.textContent = j.files[i].name + '  (' + j.files[i].sizeMb + ' MB)';
-      sel.appendChild(opt);
-    }
-  } catch (e) {
-    document.getElementById('ggufFileSelect').innerHTML = '<option value="">서비스 연결 실패</option>';
-  }
-}
-
-// ── GGUF 선택 시 메타데이터 읽기 ────────────────
-async function onGgufSelected() {
-  var sel      = document.getElementById('ggufFileSelect');
-  var filePath = sel.value;
-  var badge    = document.getElementById('archBadge');
-  if (!filePath) {
-    badge.innerHTML = '';
-    document.getElementById('modelfileContent').value = '';
-    return;
-  }
-  badge.innerHTML = '<span style="color:#888; font-size:0.85rem;">아키텍처 감지 중...</span>';
-  try {
-    var fd = new FormData();
-    fd.append('filePath', filePath);
-    var r = await fetch(OLLAMA_API + '/gguf/metadata', { method: 'POST', body: fd });
-    var j = await r.json();
-    if (j.success) {
-      badge.innerHTML = '<span class="arch-badge">감지된 아키텍처: ' + j.archLabel + ' (' + (j.arch || '?') + ')</span>';
-      document.getElementById('modelfileContent').value = j.modelfile || '';
-      var nameInput = document.getElementById('ollamaModelName');
-      if (!nameInput.value && j.modelName) {
-        nameInput.value = j.modelName.toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-');
-      }
-    } else {
-      badge.innerHTML = '<span style="color:#c62828; font-size:0.85rem;">감지 실패: ' + j.message + '</span>';
-    }
-  } catch (e) {
-    badge.innerHTML = '<span style="color:#c62828; font-size:0.85rem;">서비스 연결 실패 (포트 8001 확인)</span>';
-  }
-}
-
-// ── Ollama 모델 등록 ─────────────────────────────
-async function registerOllamaModel() {
-  var modelName        = document.getElementById('ollamaModelName').value.trim();
-  var modelfileContent = document.getElementById('modelfileContent').value.trim();
-  var logEl            = document.getElementById('registerLog');
-  var btn              = document.getElementById('registerBtn');
-
-  if (!modelName)        { logEl.textContent = '모델 이름을 입력하세요.'; return; }
-  if (!modelfileContent) { logEl.textContent = 'Modelfile 내용이 없습니다.'; return; }
-
-  btn.disabled    = true;
-  logEl.textContent = '등록 중... (모델 크기에 따라 수분 소요)\n' + modelName;
-  try {
-    var r = await fetch(OLLAMA_API + '/ollama/register', {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ modelName: modelName, modelfileContent: modelfileContent }),
-    });
-    var j = await r.json();
-    logEl.textContent = j.success ? ('✅ ' + j.message) : ('❌ ' + j.message);
-    if (j.success) {
-      await refreshOllamaModels();
-    }
-  } catch (e) {
-    logEl.textContent = '❌ 연결 실패: Ollama 서비스(포트 8001)가 실행 중인지 확인하세요.';
-  }
-  btn.disabled = false;
-}
-
-// ── 등록 모델 목록 새로고침 ──────────────────────
-async function refreshOllamaModels() {
-  var listEl  = document.getElementById('ollamaModelList');
-  var chatSel = document.getElementById('chatModelSelect');
-  try {
-    var r = await fetch(OLLAMA_API + '/ollama/models');
-    var j = await r.json();
-    if (!j.success || !j.models || j.models.length === 0) {
-      listEl.innerHTML  = '<span style="color:#aaa; font-size:0.9rem;">등록된 모델 없음</span>';
-      chatSel.innerHTML = '<option value="">모델 없음</option>';
-      return;
-    }
-    var html = '<table class="model-list-table">';
-    html += '<tr><th>모델명</th><th>크기</th><th>수정일</th><th></th></tr>';
-    chatSel.innerHTML = '<option value="">모델 선택...</option>';
-    for (var i = 0; i < j.models.length; i++) {
-      var m        = j.models[i];
-      var sizeGb   = m.size ? (m.size / 1024 / 1024 / 1024).toFixed(2) + ' GB' : '-';
-      var modDate  = m.modified_at ? m.modified_at.substring(0, 10) : '-';
-      var mName    = m.name;
-      html += '<tr>';
-      html += '<td style="font-weight:600;">' + mName + '</td>';
-      html += '<td>' + sizeGb + '</td>';
-      html += '<td>' + modDate + '</td>';
-      html += '<td><button class="btn" style="padding:4px 10px; background:#ef9a9a; color:#fff; font-size:0.82rem;" '
-            + 'onclick="deleteOllamaModel(\'' + mName + '\')">🗑 삭제</button></td>';
-      html += '</tr>';
-      var opt       = document.createElement('option');
-      opt.value     = mName;
-      opt.textContent = mName;
-      chatSel.appendChild(opt);
-    }
-    html += '</table>';
-    listEl.innerHTML = html;
-  } catch (e) {
-    listEl.innerHTML = '<span style="color:#c62828; font-size:0.9rem;">Ollama 서비스 연결 실패</span>';
-  }
-}
-
-// ── 모델 삭제 ────────────────────────────────────
-async function deleteOllamaModel(modelName) {
-  if (!confirm('\'' + modelName + '\' 모델을 삭제할까요?')) return;
-  try {
-    var r = await fetch(OLLAMA_API + '/ollama/model/' + encodeURIComponent(modelName), { method: 'DELETE' });
-    var j = await r.json();
-    alert(j.message);
-    await refreshOllamaModels();
-  } catch (e) {
-    alert('삭제 실패: ' + e.message);
   }
 }
 
@@ -1598,14 +1443,14 @@ function clearChatHistory() {
 
 // ── 채팅 전송 ────────────────────────────────────
 async function sendChat() {
-  var modelName    = document.getElementById('chatModelSelect').value;
   var message      = document.getElementById('chatMessage').value.trim();
   var systemPrompt = document.getElementById('systemPrompt').value;
   var imageFile    = document.getElementById('chatImage').files[0];
+  var maxNewTokens = parseInt(document.getElementById('maxNewTokens').value) || 256;
+  var temperature  = parseFloat(document.getElementById('inferTemperature').value) || 0.2;
   var btn          = document.getElementById('sendChatBtn');
 
-  if (!modelName) { alert('모델을 선택하세요.'); return; }
-  if (!message)   { alert('메시지를 입력하세요.'); return; }
+  if (!message) { alert('메시지를 입력하세요.'); return; }
 
   btn.disabled    = true;
   btn.textContent = '⏳ 응답 대기 중...';
@@ -1615,23 +1460,23 @@ async function sendChat() {
 
   try {
     var fd = new FormData();
-    fd.append('modelName',    modelName);
     fd.append('message',      message);
     fd.append('systemPrompt', systemPrompt);
+    fd.append('maxNewTokens', maxNewTokens);
+    fd.append('temperature',  temperature);
     if (imageFile) { fd.append('image', imageFile); }
 
-    var r = await fetch(OLLAMA_API + '/ollama/chat', { method: 'POST', body: fd });
+    var r = await fetch(OLLAMA_API + '/chat', { method: 'POST', body: fd });
     var j = await r.json();
 
     if (j.success) {
-      var reply = j.response + (j.tokens ? '\n\n[생성 토큰: ' + j.tokens + ']' : '');
-      appendChatBubble('assistant', reply);
+      appendChatBubble('assistant', j.response);
       document.getElementById('chatMessage').value = '';
     } else {
       appendChatBubble('error', '에러: ' + j.message);
     }
   } catch (e) {
-    appendChatBubble('error', '연결 실패: Ollama 서비스(포트 8001) 확인');
+    appendChatBubble('error', '연결 실패: 추론 서비스(포트 9999) 확인');
   }
 
   btn.disabled    = false;
@@ -1693,15 +1538,17 @@ async function sendChat() {
     }
   } catch (e) {}
 
-  // Ollama 서비스 초기 상태 확인 — 미실행 시 탭 버튼 비활성화
+  // 추론 서비스 초기 상태 확인 — 미실행/미설치 시 탭 버튼 비활성화
   try {
-    var r4   = await fetch('/api/ollama/status');
+    var r4   = await fetch('/api/infer/status');
     var j4   = await r4.json();
     var oBtn = document.getElementById('ollamaTabBtn');
     if (oBtn && !j4.running) {
-      oBtn.disabled   = true;
-      oBtn.title      = 'Ollama 서비스 미실행 — fastapi, uvicorn, Pillow, httpx, python-multipart 설치 후 서버 재시작';
-      oBtn.textContent = '🤖 Ollama 테스트 (미설치)';
+      oBtn.disabled    = true;
+      oBtn.textContent = '🤖 멀티모달 추론 (미실행)';
+      oBtn.title       = j4.reason
+        ? j4.reason + ' — pip install fastapi uvicorn python-multipart 후 서버 재시작'
+        : '추론 서비스 미실행 — 서버 재시작 필요';
     }
   } catch (e) {}
 })();
