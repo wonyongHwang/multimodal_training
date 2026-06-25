@@ -189,7 +189,7 @@ def insertRunStart(simSeq, cfg):
         print({"success": False, "message": f"insertRunStart 실패: {e}"})
 
 
-def updateRunEnd(simSeq, trainResult, dbCfg, status='completed', errorMsg=None):
+def updateRunEnd(simSeq, trainResult, dbCfg, status='completed', errorMsg=None, bestEvalLoss=None):
     """학습 완료/실패 시 simulation_runs 레코드 업데이트"""
     try:
         conn   = getDbConn(dbCfg)
@@ -206,7 +206,7 @@ def updateRunEnd(simSeq, trainResult, dbCfg, status='completed', errorMsg=None):
                 """,
                 (
                     status, datetime.now(),
-                    metrics.get('train_loss'),
+                    bestEvalLoss,
                     metrics.get('train_runtime'),
                     metrics.get('train_samples_per_second'),
                     trainResult.global_step,
@@ -574,10 +574,12 @@ def main():
         lr_scheduler_type="constant",
         logging_steps=cfg['logging_steps'],
         report_to='tensorboard',
-        eval_strategy='no',
-        save_strategy='steps',
-        save_steps=cfg['save_steps'],
+        eval_strategy='epoch',
+        save_strategy='epoch',
         save_total_limit=3,
+        load_best_model_at_end=True,
+        metric_for_best_model='eval_loss',
+        greater_is_better=False,
         bf16=torch.cuda.is_available(),
         remove_unused_columns=False,
         dataset_kwargs={"skip_prepare_dataset": True},
@@ -590,7 +592,7 @@ def main():
     trainer = SFTTrainer(
         model=model,
         train_dataset=train_ds,
-        eval_dataset=None,
+        eval_dataset=eval_ds,
         peft_config=peftParams,
         processing_class=processor,
         data_collator=collateFn,
@@ -604,12 +606,14 @@ def main():
     startTime   = datetime.now()
     trainResult = None
     try:
-        trainResult = trainer.train()
-        endTime = datetime.now()
-        elapsed = (endTime - startTime).seconds
+        trainResult  = trainer.train()
+        endTime      = datetime.now()
+        elapsed      = (endTime - startTime).seconds
         print(f"\n학습 완료 — {elapsed // 60}분 {elapsed % 60}초")
 
-        updateRunEnd(simSeq, trainResult, cfg['db'], status='completed')
+        bestEvalLoss = trainer.state.best_metric
+        print(f"Best eval_loss: {bestEvalLoss}")
+        updateRunEnd(simSeq, trainResult, cfg['db'], status='completed', bestEvalLoss=bestEvalLoss)
 
     except Exception as e:
         updateRunEnd(simSeq, None, cfg['db'], status='failed', errorMsg=str(e))
