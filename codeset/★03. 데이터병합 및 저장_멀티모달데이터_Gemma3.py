@@ -23,7 +23,7 @@ from PIL import Image
 from peft import PeftModel
 from transformers import AutoProcessor, AutoModelForImageTextToText
 from dotenv import load_dotenv
-from huggingface_hub import login
+from huggingface_hub import login, HfApi
 
 
 # ============================================================
@@ -121,33 +121,47 @@ def mergeAdapter(baseModel, adapterPath):
 # ============================================================
 
 def saveMerged(mergedModel, processor, mergedLocalDir):
-    """병합된 모델과 프로세서를 로컬에 저장"""
+    """병합된 모델과 프로세서를 로컬에 저장 (양자화 잔재 검증 포함)"""
     try:
-        os.makedirs(mergedLocalDir, exist_ok=True)
-        mergedModel.save_pretrained(mergedLocalDir)
-        processor.save_pretrained(mergedLocalDir)
-        print(f"병합 모델 로컬 저장 완료: {mergedLocalDir}")
-    except Exception as e:
-        print({"success": False, "message": f"로컬 저장 실패: {e}"})
-
-
-def uploadToHub(mergedModel, processor, mergedModelRepo, hfToken):
-    """병합된 모델과 프로세서를 HuggingFace Hub에 업로드 (push 전 양자화 잔재 검증 포함)"""
-    try:
-        # ★ push 전 양자화 상태 검증 (4-bit 가중치가 섞이면 HF 재로드 시 shape mismatch)
         for name, param in mergedModel.named_parameters():
             if param.dtype in (torch.int8, torch.uint8) or (len(param.shape) == 1 and param.shape[0] > 1_000_000):
                 raise RuntimeError(
                     f"양자화 잔재 감지: {name} | dtype={param.dtype} shape={param.shape}\n"
                     "→ loadBaseModel()부터 다시 실행하세요. quantization_config 없이 로드해야 합니다."
                 )
-        print("검증 통과: 양자화 잔재 없음, 정상 push 진행")
+        print("검증 통과: 양자화 잔재 없음, 저장 진행")
+        os.makedirs(mergedLocalDir, exist_ok=True)
+        # safetensors 0.8.0은 shared tensor 허용 안 함 → tied weight 키를 state_dict에서 제거 후 저장
+        # config.json의 tie_word_embeddings=True 덕분에 from_pretrained 시 자동 복원됨
+        stateDict = mergedModel.state_dict()
+        tiedKey = "lm_head.weight"
+        if tiedKey in stateDict:
+            del stateDict[tiedKey]
+            print(f"Tied weight 제거: {tiedKey} (로드 시 tie_word_embeddings=True로 자동 복원)")
+        mergedModel.save_pretrained(mergedLocalDir, state_dict=stateDict)
+        processor.save_pretrained(mergedLocalDir)
+        print(f"병합 모델 로컬 저장 완료: {mergedLocalDir}")
+        return True
+    except Exception as e:
+        print({"success": False, "message": f"로컬 저장 실패: {e}"})
+        return False
 
+
+def uploadToHub(mergedLocalDir, mergedModelRepo, hfToken):
+    """로컬 저장된 병합 모델을 HuggingFace Hub에 업로드 후 로컬 폴더 삭제"""
+    try:
         tokenVal = hfToken if hfToken not in ('YOUR_HF_TOKEN', '') else None
         print(f"Hub 업로드 중: {mergedModelRepo}")
-        mergedModel.push_to_hub(mergedModelRepo, token=tokenVal)
-        processor.push_to_hub(mergedModelRepo, token=tokenVal)
+        api = HfApi()
+        api.upload_folder(
+            folder_path=mergedLocalDir,
+            repo_id=mergedModelRepo,
+            repo_type='model',
+            token=tokenVal,
+        )
         print(f"Hub 업로드 완료: {mergedModelRepo}")
+        shutil.rmtree(mergedLocalDir)
+        print(f"로컬 병합 폴더 삭제 완료: {mergedLocalDir}")
     except Exception as e:
         print({"success": False, "message": f"Hub 업로드 실패: {e}"})
 
@@ -259,10 +273,12 @@ def main():
         return
 
     # ===== 로컬 저장 =====
-    saveMerged(mergedModel, processor, cfg['merged_local_dir'])
+    if not saveMerged(mergedModel, processor, cfg['merged_local_dir']):
+        print({"success": False, "message": "로컬 저장 실패 — 업로드 중단"})
+        return
 
-    # ===== Hub 업로드 =====
-    uploadToHub(mergedModel, processor, cfg['merged_model_repo'], cfg['hf_token'])
+    # ===== Hub 업로드 (로컬 → Hub → 로컬 삭제) =====
+    uploadToHub(cfg['merged_local_dir'], cfg['merged_model_repo'], cfg['hf_token'])
 
     # ===== Hub에서 재로드 후 추론 검증 =====
     inferModel, inferProcessor = loadMergedFromHub(cfg['merged_model_repo'], cfg['hf_token'])
