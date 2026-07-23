@@ -1,0 +1,1646 @@
+# OCR 손글씨 이미지 및 Alpaca 텍스트 데이터셋 통합
+
+## 1. 프로그램 개요
+
+`01_data_prep_ocr.py`는 다음 두 종류의 데이터를 하나의 Hugging Face Dataset으로 통합하고 Hugging Face Hub에 업로드하는 데이터 전처리 프로그램입니다.
+
+1. ZIP 파일로 압축된 손글씨 OCR 이미지와 JSON 라벨 데이터
+2. Alpaca 형식의 텍스트 명령어 데이터
+
+이 프로그램은 OCR 이미지와 라벨 JSON을 이미지 ID로 연결하여 다음과 같은 이미지-텍스트 학습 샘플을 생성합니다.
+
+```text
+손글씨 이미지
++ OCR 작업 지시문
+→ 이미지에 작성된 정답 텍스트
+```
+
+또한 일반 텍스트 명령어 데이터도 동일한 데이터 구조로 변환하여 OCR 데이터와 함께 저장합니다.
+
+최종 데이터셋은 이미지가 포함된 `image_text` 샘플과 이미지가 없는 `text_only` 샘플을 모두 포함합니다.
+
+---
+
+## 2. 실행 방법
+
+```bash
+python 01_data_prep_ocr.py
+```
+
+프로그램을 실행하기 전에 `.env` 파일에 Hugging Face 인증 정보와 데이터 경로를 설정해야 합니다.
+
+---
+
+## 3. 전체 처리 흐름
+
+```text
+.env 환경 설정 로드
+        ↓
+Alpaca 텍스트 JSON 데이터 로드
+        ↓
+OCR 이미지 ZIP 파일 탐색
+        ↓
+ZIP 내부 이미지 ID 인덱스 생성
+        ↓
+OCR 라벨 JSON 파일 수집
+        ↓
+JSON의 이미지 ID와 ZIP 내부 이미지 연결
+        ↓
+bbox의 정답 텍스트 결합
+        ↓
+이미지를 RGB JPEG 형식으로 재인코딩
+        ↓
+OCR 데이터를 청크 단위 Arrow shard로 저장
+        ↓
+저장된 OCR shard 통합
+        ↓
+OCR 데이터와 Alpaca 텍스트 데이터 결합
+        ↓
+전체 데이터셋 셔플
+        ↓
+Hugging Face Hub 업로드
+```
+
+---
+
+## 4. 필요한 패키지
+
+주요 Python 패키지는 다음과 같습니다.
+
+```bash
+pip install pandas pillow datasets python-dotenv huggingface_hub
+```
+
+주요 라이브러리의 역할은 다음과 같습니다.
+
+| 라이브러리           | 역할                                |
+| --------------- | --------------------------------- |
+| `pandas`        | Alpaca JSON Lines 파일 로드           |
+| `Pillow`        | 이미지 읽기, 변환 및 JPEG 재인코딩            |
+| `datasets`      | Hugging Face Dataset 생성 및 Hub 업로드 |
+| `python-dotenv` | `.env` 환경 변수 로드                   |
+| `zipfile`       | ZIP 내부 이미지 탐색 및 읽기                |
+
+---
+
+## 5. 환경 변수 설정
+
+프로젝트 루트에 `.env` 파일을 생성합니다.
+
+```env
+HF_TOKEN=hf_xxxxxxxxxxxxxxxxx
+HF_DATASET_REPO=hyokwan/ocr_dataset
+
+OCR_ROOT=./dataset/05. 멀티모달 OCR/OCR손글씨
+TEXT_JSON_PATH=./dataset/04. 멀티모달 샘플/text_samples/sample_data.json
+
+DATASET_DIR=./dataset/ocr_dataset
+CHUNK_SIZE=500
+MAX_OCR_SAMPLES=
+SEED=42
+
+OCR_INSTR_TEXT=이미지에서 손글씨로 작성된 텍스트를 모두 인식하여 전사하세요.
+OCR_INPUT_TEXT=이미지에 포함된 모든 텍스트를 공백으로 구분하여 순서대로 나열해주세요.
+```
+
+### 환경 변수 설명
+
+| 환경 변수             | 설명                       | 기본값                     |
+| ----------------- | ------------------------ | ----------------------- |
+| `HF_TOKEN`        | Hugging Face Hub 인증 토큰   | 빈 문자열                   |
+| `HF_DATASET_REPO` | 업로드할 Dataset 저장소         | `hyokwan/ocr_dataset`   |
+| `OCR_ROOT`        | OCR 데이터의 최상위 경로          | 코드 내 기본 경로              |
+| `TEXT_JSON_PATH`  | Alpaca 텍스트 JSON Lines 파일 | 코드 내 기본 경로              |
+| `DATASET_DIR`     | 중간 Arrow shard 저장 경로     | `./dataset/ocr_dataset` |
+| `CHUNK_SIZE`      | OCR JSON을 한 번에 처리할 개수    | `500`                   |
+| `MAX_OCR_SAMPLES` | 처리할 OCR 샘플 최대 개수         | 전체                      |
+| `SEED`            | 데이터셋 셔플 시드               | `42`                    |
+| `OCR_INSTR_TEXT`  | OCR 작업 instruction       | 기본 한글 지시문               |
+| `OCR_INPUT_TEXT`  | OCR 작업 input             | 기본 한글 입력 문장             |
+
+`MAX_OCR_SAMPLES`가 비어 있으면 전체 OCR JSON 파일을 처리합니다.
+
+예를 들어 테스트 목적으로 OCR 데이터 1,000개만 처리하려면 다음과 같이 설정합니다.
+
+```env
+MAX_OCR_SAMPLES=1000
+```
+
+---
+
+## 6. 예상 원본 데이터 구조
+
+OCR 데이터는 라벨 JSON과 원본 이미지가 분리된 형태라고 가정합니다.
+
+```text
+OCR손글씨/
+├── 1.Training/
+│   ├── 라벨링데이터/
+│   │   └── TL/
+│   │       └── 라벨/
+│   │           ├── HW_000001.json
+│   │           ├── HW_000002.json
+│   │           └── ...
+│   │
+│   └── 원천데이터/
+│       ├── images_part01.zip
+│       ├── images_part02.zip
+│       └── ...
+│
+└── 기타 데이터 폴더
+```
+
+코드는 `OCR_ROOT` 아래의 모든 ZIP 파일을 재귀적으로 탐색합니다.
+
+라벨 JSON은 다음 경로에서 재귀적으로 수집합니다.
+
+```text
+OCR_ROOT/
+└── 1.Training/
+    └── 라벨링데이터/
+        └── TL/
+            └── 라벨/
+```
+
+실제 경로는 `loadSettings()`에서 다음과 같이 생성됩니다.
+
+```python
+ocrLabelRoot = os.path.join(
+    ocrRoot,
+    "1.Training",
+    "라벨링데이터",
+    "TL",
+    "라벨"
+)
+```
+
+---
+
+## 7. OCR 라벨 JSON의 예상 구조
+
+코드에서 사용하는 필드를 기준으로 보면 OCR 라벨 JSON은 대략 다음과 같은 구조입니다.
+
+```json
+{
+  "Images": {
+    "identifier": "HW_000001",
+    "media_type": 0
+  },
+  "bbox": [
+    {
+      "data": "오늘"
+    },
+    {
+      "data": "날씨가"
+    },
+    {
+      "data": "좋습니다"
+    }
+  ]
+}
+```
+
+실제 JSON에는 이미지 크기, 파일명, 좌표, 촬영 정보, 카테고리 등의 필드가 추가로 포함될 수 있습니다.
+
+하지만 현재 프로그램이 실제로 사용하는 값은 다음과 같습니다.
+
+| JSON 필드             | 역할                           |
+| ------------------- | ---------------------------- |
+| `Images.identifier` | JSON 라벨과 ZIP 내부 이미지를 연결하는 ID |
+| `Images.media_type` | 종이 필기와 태블릿 필기를 구분            |
+| `bbox[].data`       | 이미지에 작성된 정답 텍스트              |
+
+---
+
+## 8. `Images.identifier`의 역할
+
+`Images.identifier`는 JSON 라벨과 실제 이미지를 연결하는 조인 키입니다.
+
+예를 들어 JSON에 다음 값이 있다고 가정합니다.
+
+```json
+{
+  "Images": {
+    "identifier": "HW_000001"
+  }
+}
+```
+
+ZIP 내부에 다음 이미지가 있으면 두 데이터가 연결됩니다.
+
+```text
+images/HW_000001.jpg
+```
+
+코드는 ZIP 내부 경로에서 파일명만 추출하고 확장자를 제거합니다.
+
+```python
+imgId = os.path.splitext(os.path.basename(entry))[0]
+```
+
+처리 결과는 다음과 같습니다.
+
+```text
+images/HW_000001.jpg
+        ↓
+HW_000001.jpg
+        ↓
+HW_000001
+```
+
+따라서 다음 두 값이 일치하면 동일한 샘플로 판단합니다.
+
+```text
+JSON: Images.identifier = HW_000001
+ZIP:  이미지 파일명        = HW_000001.jpg
+```
+
+---
+
+## 9. `Images.media_type`의 역할
+
+코드는 `media_type`에 따라 필기 매체를 구분합니다.
+
+```python
+mediaType = (
+    "P.Paper"
+    if imgInfo.get("media_type", 0) == 0
+    else "T.Tablet"
+)
+```
+
+변환 규칙은 다음과 같습니다.
+
+| `media_type` 값 | 최종 `label` |
+| -------------: | ---------- |
+|            `0` | `P.Paper`  |
+|         `0` 이외 | `T.Tablet` |
+
+예를 들어 다음 JSON은 종이에 작성된 손글씨로 처리됩니다.
+
+```json
+{
+  "Images": {
+    "media_type": 0
+  }
+}
+```
+
+최종 Dataset에는 다음 값이 저장됩니다.
+
+```python
+"label": "P.Paper"
+```
+
+이 필드는 향후 다음 용도로 활용할 수 있습니다.
+
+* 종이 손글씨와 태블릿 손글씨 성능 비교
+* 매체별 데이터 필터링
+* 매체별 평가 데이터 구성
+* 매체별 샘플 수 분석
+
+---
+
+## 10. `bbox` 데이터 처리
+
+`bbox`에는 이미지 안에서 인식해야 할 개별 글자, 단어 또는 문장 영역이 들어 있다고 가정합니다.
+
+실제 데이터는 다음처럼 좌표 정보도 포함할 수 있습니다.
+
+```json
+{
+  "bbox": [
+    {
+      "x": 120,
+      "y": 80,
+      "width": 150,
+      "height": 50,
+      "data": "오늘"
+    },
+    {
+      "x": 290,
+      "y": 80,
+      "width": 180,
+      "height": 50,
+      "data": "날씨가"
+    },
+    {
+      "x": 490,
+      "y": 80,
+      "width": 220,
+      "height": 50,
+      "data": "좋습니다"
+    }
+  ]
+}
+```
+
+현재 코드는 좌표값을 사용하지 않고 `data` 값만 추출합니다.
+
+```python
+ocrTokens = []
+
+for j in range(0, len(bboxList)):
+    ocrTokens.append(bboxList[j].get("data", ""))
+
+outputText = " ".join(ocrTokens)
+```
+
+처리 결과는 다음과 같습니다.
+
+```python
+ocrTokens = [
+    "오늘",
+    "날씨가",
+    "좋습니다"
+]
+
+outputText = "오늘 날씨가 좋습니다"
+```
+
+이 문자열이 OCR 모델의 정답인 `output` 필드에 저장됩니다.
+
+### bbox 순서에 대한 주의사항
+
+현재 코드는 `bbox` 배열의 순서를 그대로 사용합니다.
+
+따라서 원본 JSON의 `bbox` 배열이 실제 읽기 순서대로 정렬되어 있어야 합니다.
+
+예를 들어 배열이 다음 순서라면,
+
+```json
+[
+  {"data": "좋습니다"},
+  {"data": "오늘"},
+  {"data": "날씨가"}
+]
+```
+
+최종 정답도 다음과 같이 생성됩니다.
+
+```text
+좋습니다 오늘 날씨가
+```
+
+현재 프로그램은 `x`, `y` 좌표를 이용해 위에서 아래, 왼쪽에서 오른쪽 순서로 재정렬하지 않습니다.
+
+필요하면 별도의 bbox 정렬 로직을 추가해야 합니다.
+
+---
+
+## 11. ZIP 내부 이미지 인덱싱
+
+`buildZipImageMap()` 함수는 `OCR_ROOT` 아래의 모든 ZIP 파일을 탐색합니다.
+
+지원하는 이미지 확장자는 다음과 같습니다.
+
+```python
+{".jpg", ".jpeg", ".png", ".webp"}
+```
+
+각 ZIP 파일의 내부 이미지에 대해 다음과 같은 매핑을 생성합니다.
+
+```python
+{
+    "이미지ID": (
+        "ZIP 파일 경로",
+        "ZIP 내부 이미지 경로"
+    )
+}
+```
+
+예시는 다음과 같습니다.
+
+```python
+zipImageMap = {
+    "HW_000001": (
+        "./dataset/OCR손글씨/images_part01.zip",
+        "images/HW_000001.jpg"
+    ),
+    "HW_000002": (
+        "./dataset/OCR손글씨/images_part01.zip",
+        "images/HW_000002.png"
+    ),
+    "HW_005001": (
+        "./dataset/OCR손글씨/images_part02.zip",
+        "train/set02/HW_005001.webp"
+    )
+}
+```
+
+ZIP 내부의 폴더 구조는 중요하지 않습니다.
+
+다음과 같은 경로도 파일명이 동일하면 정상적으로 처리됩니다.
+
+```text
+images/HW_000001.jpg
+train/images/HW_000001.jpg
+dataset/set01/HW_000001.jpg
+```
+
+모두 다음 이미지 ID로 변환됩니다.
+
+```text
+HW_000001
+```
+
+### ZIP 인덱스를 먼저 만드는 이유
+
+이미지 인덱스가 없다면 JSON 파일 하나를 처리할 때마다 모든 ZIP 파일을 열어 해당 이미지를 찾아야 합니다.
+
+이미지 인덱스를 먼저 생성하면 다음과 같이 이미지 위치를 바로 조회할 수 있습니다.
+
+```python
+zipPath, entryPath = zipImageMap[imgId]
+```
+
+이를 통해 대규모 OCR 데이터를 더 효율적으로 처리할 수 있습니다.
+
+---
+
+## 12. JSON 라벨과 이미지의 결합 과정
+
+다음 JSON이 있다고 가정합니다.
+
+```json
+{
+  "Images": {
+    "identifier": "HW_000001",
+    "media_type": 0
+  },
+  "bbox": [
+    {"data": "대한민국의"},
+    {"data": "수도는"},
+    {"data": "서울입니다"}
+  ]
+}
+```
+
+### 1단계: 이미지 ID 추출
+
+```python
+imgId = "HW_000001"
+```
+
+### 2단계: ZIP 이미지 인덱스 조회
+
+```python
+zipImageMap["HW_000001"]
+```
+
+조회 결과는 다음과 같습니다.
+
+```python
+(
+    "./dataset/OCR손글씨/images_part01.zip",
+    "images/HW_000001.jpg"
+)
+```
+
+### 3단계: ZIP에서 이미지 바이트 읽기
+
+```python
+with zipfile.ZipFile(zipPath, "r") as zf:
+    imgData = zf.read(entryPath)
+```
+
+### 4단계: PIL 이미지 생성
+
+```python
+pilImage = Image.open(BytesIO(imgData))
+pilImage.load()
+pilImage = pilImage.convert("RGB")
+```
+
+### 5단계: bbox 정답 텍스트 결합
+
+```text
+대한민국의
+수도는
+서울입니다
+```
+
+다음 문자열로 결합됩니다.
+
+```text
+대한민국의 수도는 서울입니다
+```
+
+### 6단계: Dataset 학습 샘플 생성
+
+최종적으로 이미지와 정답 문자열이 하나의 Dataset 행으로 연결됩니다.
+
+```python
+{
+    "modality": "image_text",
+    "image": <손글씨 이미지>,
+    "instruction": "이미지에서 손글씨로 작성된 텍스트를 모두 인식하여 전사하세요.",
+    "input": "이미지에 포함된 모든 텍스트를 공백으로 구분하여 순서대로 나열해주세요.",
+    "output": "대한민국의 수도는 서울입니다",
+    "source": "OCR_handwriting",
+    "label": "P.Paper"
+}
+```
+
+이 프로그램은 JSON 파일과 이미지 파일을 하나의 물리적 파일로 합치는 것이 아닙니다.
+
+대신 Hugging Face Dataset의 한 행에 다음 정보를 함께 저장합니다.
+
+```text
+Dataset 한 행
+├── 이미지 데이터
+├── OCR 작업 지시문
+├── OCR 입력 문장
+├── 정답 텍스트
+├── 데이터 출처
+└── 종이 또는 태블릿 구분
+```
+
+---
+
+## 13. 이미지 처리 방식
+
+### 13.1 ZIP에서 원본 이미지 읽기
+
+이미지는 ZIP 파일에서 바이트 형태로 읽습니다.
+
+```python
+with zipfile.ZipFile(zipPath, "r") as zf:
+    imgData = zf.read(entryPath)
+```
+
+그다음 `BytesIO`를 통해 PIL 이미지로 변환합니다.
+
+```python
+img = Image.open(BytesIO(imgData))
+img.load()
+return img.convert("RGB")
+```
+
+`convert("RGB")`를 수행하므로 다음과 같은 이미지도 RGB 이미지로 통일됩니다.
+
+* 흑백 이미지
+* RGBA 이미지
+* PNG 이미지
+* WebP 이미지
+* 기존 JPEG 이미지
+
+---
+
+### 13.2 JPEG 재인코딩
+
+불러온 이미지는 품질 85의 JPEG 형식으로 다시 인코딩됩니다.
+
+WebP이더라도 최종 OCR Dataset에는 JPEG로 변환된 이미지가 들어갑니다.
+
+| 원본 형식 | Dataset에 전달되는 형식   |
+| ----- | ------------------ |
+| JPEG  | JPEG 품질 85로 재인코딩   |
+| PNG   | RGB JPEG 품질 85로 변환 |
+| WebP  | RGB JPEG 품질 85로 변환 |
+
+이 과정의 주요 목적은 다음과 같습니다.
+
+* 이미지 형식 통일
+* 이미지 모드 RGB 통일
+* 저장 용량 절감
+* Hub 업로드 용량 절감
+* ZIP 원본 파일과 Dataset 데이터 분리
+
+JPEG는 손실 압축 방식이므로 원본 이미지와 픽셀 값이 완전히 동일하게 유지되지는 않습니다.
+
+OCR 정확도를 위해 원본 품질 유지가 중요하다면 JPEG 품질 값을 높이거나 PNG 저장 방식을 검토할 수 있습니다.
+
+---
+
+### 13.3 Hugging Face Dataset에 이미지가 포함되는 방식
+
+Dataset의 이미지 컬럼은 다음과 같이 정의됩니다.
+
+```python
+ocrFeatures = Features({
+    "modality":    Value("string"),
+    "image":       HFImage(),
+    "instruction": Value("string"),
+    "input":       Value("string"),
+    "output":      Value("string"),
+    "source":      Value("string"),
+    "label":       Value("string")
+})
+```
+
+`HFImage()`는 Hugging Face `datasets.Image` feature입니다.
+
+코드는 JPEG로 재인코딩한 이미지를 다시 PIL 이미지로 열어 Dataset 행에 전달합니다.
+
+```python
+"image": Image.open(
+    BytesIO(imgBuffer.getvalue())
+)
+```
+
+따라서 Dataset에는 단순히 원본 ZIP 경로만 저장되는 것이 아니라, 전처리된 이미지 내용이 Dataset shard에 직렬화되어 포함됩니다.
+
+개념적으로는 다음과 같은 이미지 정보가 저장됩니다.
+
+```python
+{
+    "bytes": <JPEG로 인코딩된 이미지 데이터>,
+    "path": None
+}
+```
+
+실제 내부 표현은 Hugging Face `datasets` 버전과 저장 방식에 따라 달라질 수 있지만, 이 코드에서는 원본 ZIP 파일에 의존하지 않도록 이미지 자체를 Dataset에 전달합니다.
+
+따라서 Dataset을 Hub에 업로드한 후에는 원본 ZIP 파일이 없어도 업로드된 Dataset에서 이미지를 읽을 수 있습니다.
+
+---
+
+### 13.4 Dataset 로드 시 이미지 형식
+
+Dataset을 다시 불러오면 `image` 컬럼은 기본적으로 PIL 이미지 객체로 디코딩됩니다.
+
+```python
+from datasets import load_dataset
+
+dataset = load_dataset("hyokwan/ocr_dataset")
+
+sample = dataset["train"][0]
+
+print(type(sample["image"]))
+print(sample["image"].mode)
+print(sample["image"].size)
+```
+
+예상 결과는 다음과 같습니다.
+
+```text
+<class 'PIL.JpegImagePlugin.JpegImageFile'>
+RGB
+(이미지 너비, 이미지 높이)
+```
+
+사용자는 저장된 이미지 바이트를 직접 디코딩하지 않고 일반 PIL 이미지처럼 사용할 수 있습니다.
+
+---
+
+### 13.5 이미지 자동 디코딩 비활성화
+
+저장된 이미지의 원시 표현을 확인하려면 `decode=False`를 사용할 수 있습니다.
+
+```python
+from datasets import Image as HFImage
+
+rawDataset = dataset.cast_column(
+    "image",
+    HFImage(decode=False)
+)
+
+print(rawDataset[0]["image"])
+```
+
+출력은 대략 다음 구조가 될 수 있습니다.
+
+```python
+{
+    "bytes": b"\xff\xd8\xff...",
+    "path": None
+}
+```
+
+`b"\xff\xd8\xff"`는 일반적인 JPEG 파일 시작 바이트입니다.
+
+---
+
+## 14. OCR Dataset의 컬럼 구조
+
+OCR 데이터의 각 행은 다음 7개 컬럼으로 구성됩니다.
+
+| 컬럼            | 타입                 | 설명                |
+| ------------- | ------------------ | ----------------- |
+| `modality`    | string             | 데이터 유형            |
+| `image`       | Hugging Face Image | 손글씨 이미지           |
+| `instruction` | string             | 모델에 전달할 작업 지시     |
+| `input`       | string             | 추가 입력 또는 출력 형식 설명 |
+| `output`      | string             | OCR 정답 텍스트        |
+| `source`      | string             | 데이터 출처            |
+| `label`       | string             | 종이 또는 태블릿 구분      |
+
+OCR 샘플의 예시는 다음과 같습니다.
+
+```python
+{
+    "modality": "image_text",
+    "image": <PIL.Image.Image>,
+    "instruction": "이미지에서 손글씨로 작성된 텍스트를 모두 인식하여 전사하세요.",
+    "input": "이미지에 포함된 모든 텍스트를 공백으로 구분하여 순서대로 나열해주세요.",
+    "output": "오늘 날씨가 좋습니다",
+    "source": "OCR_handwriting",
+    "label": "P.Paper"
+}
+```
+
+---
+
+## 15. Alpaca 텍스트 데이터 구조
+
+텍스트 데이터는 JSON Lines 형식을 사용합니다.
+
+파일의 각 줄에는 하나의 JSON 객체가 있어야 합니다.
+
+```json
+{"instruction":"질문에 답하세요.","input":"대한민국의 수도는?","output":"서울입니다."}
+{"instruction":"문장을 요약하세요.","input":"요약할 문장입니다.","output":"요약 결과입니다."}
+```
+
+`loadTextDataset()` 함수는 텍스트 데이터에 다음 필드를 추가합니다.
+
+```python
+inDf["modality"] = "text_only"
+inDf["image"] = None
+inDf["source"] = "generated"
+inDf["label"] = ""
+```
+
+최종 텍스트 샘플은 다음과 같습니다.
+
+```python
+{
+    "modality": "text_only",
+    "image": None,
+    "instruction": "질문에 답하세요.",
+    "input": "대한민국의 수도는?",
+    "output": "서울입니다.",
+    "source": "generated",
+    "label": ""
+}
+```
+
+---
+
+## 16. OCR 데이터와 텍스트 데이터 통합
+
+OCR 데이터와 텍스트 데이터는 동일한 7개 컬럼을 사용합니다.
+
+### OCR 이미지 데이터
+
+| 필드            | 예시                 |
+| ------------- | ------------------ |
+| `modality`    | `image_text`       |
+| `image`       | 실제 이미지             |
+| `instruction` | 손글씨를 전사하세요         |
+| `input`       | 모든 텍스트를 순서대로 나열하세요 |
+| `output`      | 오늘 날씨가 좋습니다        |
+| `source`      | `OCR_handwriting`  |
+| `label`       | `P.Paper`          |
+
+### Alpaca 텍스트 데이터
+
+| 필드            | 예시          |
+| ------------- | ----------- |
+| `modality`    | `text_only` |
+| `image`       | `None`      |
+| `instruction` | 질문에 답하세요    |
+| `input`       | 대한민국의 수도는?  |
+| `output`      | 서울입니다       |
+| `source`      | `generated` |
+| `label`       | 빈 문자열       |
+
+텍스트 Dataset의 feature를 OCR Dataset과 동일하게 변환합니다.
+
+```python
+textDataset.cast(imageDataset.features)
+```
+
+이후 두 Dataset을 연결합니다.
+
+```python
+allDataset = concatenate_datasets([
+    imageDataset,
+    textDataset.cast(imageDataset.features)
+])
+```
+
+최종 Dataset은 다음처럼 이미지 데이터와 텍스트 데이터가 혼합된 구조입니다.
+
+```text
+행 1: image_text | 이미지 있음 | OCR 정답
+행 2: text_only  | 이미지 없음 | 텍스트 답변
+행 3: image_text | 이미지 있음 | OCR 정답
+행 4: text_only  | 이미지 없음 | 텍스트 답변
+```
+
+---
+
+## 17. Arrow shard 처리
+
+대규모 OCR 이미지를 한 번에 메모리에 적재하지 않도록 데이터를 청크 단위로 처리합니다.
+
+청크 수는 다음 코드로 계산합니다.
+
+```python
+numChunks = (
+    totalFiles + chunkSize - 1
+) // chunkSize
+```
+
+예를 들어 JSON 파일이 1,200개이고 `CHUNK_SIZE=500`이라면 다음과 같이 나뉩니다.
+
+```text
+shard_0000: JSON 0~499
+shard_0001: JSON 500~999
+shard_0002: JSON 1000~1199
+```
+
+저장 구조는 다음과 같습니다.
+
+```text
+dataset/ocr_dataset/
+├── shard_0000/
+│   ├── data-00000-of-00001.arrow
+│   ├── dataset_info.json
+│   └── state.json
+├── shard_0001/
+├── shard_0002/
+└── ...
+```
+
+각 shard는 Hugging Face `Dataset.save_to_disk()` 형식으로 저장됩니다.
+
+```python
+Dataset.from_list(
+    rows,
+    features=ocrFeatures
+).save_to_disk(shardPath)
+```
+
+---
+
+## 18. 중단 후 재실행
+
+이미 shard 폴더가 존재하면 해당 청크는 다시 처리하지 않습니다.
+
+```python
+if os.path.exists(shardPath):
+    print("이미 존재 - 건너뜀")
+    continue
+```
+
+예를 들어 다음 폴더가 이미 존재하면,
+
+```text
+dataset/ocr_dataset/shard_0000
+```
+
+다음 실행에서는 `shard_0000`을 건너뛰고 이후 shard부터 처리합니다.
+
+이 구조의 장점은 다음과 같습니다.
+
+* 장시간 전처리 중 프로그램이 중단되어도 재개 가능
+* 이미 처리한 이미지의 중복 연산 방지
+* 단계별 처리 상태 확인 가능
+
+### 주의사항
+
+다음 값을 변경해도 기존 shard가 있으면 다시 생성되지 않습니다.
+
+* OCR instruction
+* OCR input 문장
+* JPEG 품질
+* bbox 처리 방식
+* media type 처리 방식
+* 이미지 전처리 방식
+* 원본 JSON 내용
+* 원본 이미지 내용
+
+전처리 설정이나 코드를 변경했다면 기존 shard 디렉터리를 삭제한 후 다시 실행해야 합니다.
+
+```bash
+rm -rf ./dataset/ocr_dataset
+```
+
+Windows PowerShell에서는 다음과 같이 삭제할 수 있습니다.
+
+```powershell
+Remove-Item -Recurse -Force .\dataset\ocr_dataset
+```
+
+---
+
+## 19. 저장된 OCR shard 통합
+
+`loadOcrDataset()` 함수는 `DATASET_DIR`에서 `shard_`로 시작하는 폴더를 찾습니다.
+
+```python
+shardNames = sorted([
+    name
+    for name in os.listdir(datasetDir)
+    if name.startswith("shard_")
+])
+```
+
+각 shard를 불러옵니다.
+
+```python
+chunkDatasets.append(
+    load_from_disk(shardPath)
+)
+```
+
+마지막으로 모든 shard를 하나의 Dataset으로 결합합니다.
+
+```python
+imageDataset = concatenate_datasets(
+    chunkDatasets
+)
+```
+
+---
+
+## 20. 데이터셋 셔플
+
+OCR 데이터와 텍스트 데이터를 결합한 후 전체 Dataset을 섞습니다.
+
+```python
+allDataset = allDataset.shuffle(
+    seed=cfg["seed"]
+)
+```
+
+셔플을 수행하는 이유는 OCR 데이터가 앞부분에 몰리고 텍스트 데이터가 뒷부분에 몰리는 것을 방지하기 위해서입니다.
+
+동일한 데이터와 동일한 `SEED`를 사용하면 재현 가능한 순서로 셔플됩니다.
+
+---
+
+## 21. Hugging Face Hub 업로드
+
+최종 Dataset은 다음 코드로 Hugging Face Hub에 업로드됩니다.
+
+```python
+allDataset.push_to_hub(
+    cfg["hfDatasetRepo"],
+    token=cfg["hfToken"],
+    max_shard_size="500MB"
+)
+```
+
+`max_shard_size="500MB"` 설정에 따라 업로드 데이터가 크면 여러 파일로 나뉩니다.
+
+Hugging Face Hub에는 다음 데이터가 함께 업로드됩니다.
+
+* JPEG로 변환된 OCR 이미지
+* OCR instruction
+* OCR input
+* OCR 정답 텍스트
+* 종이 또는 태블릿 라벨
+* Alpaca 텍스트 instruction
+* Alpaca 텍스트 input
+* Alpaca 텍스트 output
+* 데이터 출처와 modality 정보
+
+원본 ZIP 파일 자체가 업로드되는 것은 아닙니다.
+
+ZIP에서 추출하고 JPEG로 재인코딩한 개별 이미지가 Dataset에 포함됩니다.
+
+---
+
+## 22. Hugging Face Hub에서 Dataset 로드
+
+업로드한 Dataset은 다음과 같이 불러올 수 있습니다.
+
+```python
+from datasets import load_dataset
+
+dataset = load_dataset(
+    "hyokwan/ocr_dataset"
+)
+```
+
+전체 구조를 확인합니다.
+
+```python
+print(dataset)
+print(dataset["train"].features)
+print(len(dataset["train"]))
+```
+
+첫 번째 샘플을 확인합니다.
+
+```python
+sample = dataset["train"][0]
+
+print(sample["modality"])
+print(sample["instruction"])
+print(sample["input"])
+print(sample["output"])
+print(sample["source"])
+print(sample["label"])
+```
+
+이미지가 있는 샘플이면 다음과 같이 표시할 수 있습니다.
+
+```python
+if sample["image"] is not None:
+    sample["image"].show()
+```
+
+---
+
+## 23. modality별 데이터 필터링
+
+### OCR 이미지 데이터만 선택
+
+```python
+ocrDataset = dataset["train"].filter(
+    lambda row: row["modality"] == "image_text"
+)
+```
+
+### 텍스트 데이터만 선택
+
+```python
+textDataset = dataset["train"].filter(
+    lambda row: row["modality"] == "text_only"
+)
+```
+
+### 종이 손글씨만 선택
+
+```python
+paperDataset = dataset["train"].filter(
+    lambda row: row["label"] == "P.Paper"
+)
+```
+
+### 태블릿 손글씨만 선택
+
+```python
+tabletDataset = dataset["train"].filter(
+    lambda row: row["label"] == "T.Tablet"
+)
+```
+
+---
+
+## 24. 함수별 역할
+
+### `loadSettings()`
+
+`.env` 파일에서 전체 실행 설정을 읽어 딕셔너리로 반환합니다.
+
+주요 설정은 다음과 같습니다.
+
+* Hugging Face 토큰
+* Hub Dataset 저장소
+* OCR 데이터 경로
+* 텍스트 데이터 경로
+* 최대 OCR 샘플 수
+* 청크 크기
+* 랜덤 시드
+* OCR instruction 및 input
+
+---
+
+### `loadTextDataset(textJsonPath)`
+
+Alpaca 형식 JSON Lines 파일을 읽어 Hugging Face Dataset으로 변환합니다.
+
+추가되는 값은 다음과 같습니다.
+
+```python
+"modality": "text_only"
+"image": None
+"source": "generated"
+"label": ""
+```
+
+---
+
+### `buildZipImageMap(zipRootDir)`
+
+루트 폴더 아래의 모든 ZIP 파일을 재귀적으로 탐색합니다.
+
+ZIP 내부의 이미지 파일명을 기준으로 다음 매핑을 생성합니다.
+
+```python
+이미지ID → (ZIP 파일 경로, ZIP 내부 이미지 경로)
+```
+
+---
+
+### `collectJsonFiles(labelRoot)`
+
+라벨 폴더와 하위 폴더에서 모든 `.json` 파일 경로를 수집합니다.
+
+---
+
+### `loadOcrImage(imgId, zipMap)`
+
+이미지 ID를 사용하여 ZIP 이미지 인덱스에서 파일 위치를 찾습니다.
+
+ZIP 내부 이미지를 메모리로 읽고 RGB 형식의 PIL 이미지로 반환합니다.
+
+이미지 ID가 인덱스에 없으면 `None`을 반환합니다.
+
+---
+
+### `processOcrShards(jsonFiles, zipImageMap, cfg)`
+
+OCR 전처리의 핵심 함수입니다.
+
+각 JSON 파일에 대해 다음 작업을 수행합니다.
+
+1. JSON 라벨 읽기
+2. 이미지 ID 추출
+3. media type 변환
+4. `bbox[].data` 추출
+5. OCR 정답 문자열 생성
+6. ZIP에서 실제 이미지 읽기
+7. 이미지 RGB 변환
+8. JPEG 품질 85로 재인코딩
+9. 이미지-텍스트 Dataset 행 생성
+10. 청크 단위 Arrow shard 저장
+
+---
+
+### `loadOcrDataset(datasetDir)`
+
+저장된 모든 `shard_XXXX` 폴더를 불러오고 하나의 OCR Dataset으로 통합합니다.
+
+---
+
+### `main()`
+
+전체 파이프라인을 순서대로 실행합니다.
+
+```text
+설정 로드
+→ 텍스트 데이터 로드
+→ ZIP 이미지 인덱싱
+→ OCR JSON 수집
+→ OCR shard 생성
+→ OCR shard 통합
+→ 텍스트와 OCR 데이터 통합
+→ 데이터 셔플
+→ Hugging Face Hub 업로드
+```
+
+---
+
+## 25. 예외 처리
+
+전체 파이프라인은 `try-except`로 감싸져 있습니다.
+
+```python
+except Exception as e:
+    print({
+        "success": False,
+        "message": str(e)
+    })
+    raise
+```
+
+전체 처리 중 치명적인 오류가 발생하면 오류 메시지를 출력하고 프로그램을 실패 상태로 종료합니다.
+
+개별 OCR JSON 처리 오류는 다음과 같이 별도로 처리됩니다.
+
+```python
+except Exception as e:
+    print(
+        f"처리 오류: {jsonFiles[i]} - {e}"
+    )
+```
+
+개별 JSON 또는 이미지에 오류가 있어도 전체 파이프라인은 중단하지 않고 다음 샘플을 계속 처리합니다.
+
+ZIP 스캔 오류도 개별 ZIP 단위로 출력됩니다.
+
+```python
+except Exception as e:
+    print(
+        f"ZIP 스캔 오류: {zipPath} - {e}"
+    )
+```
+
+---
+
+## 26. 설계상의 주요 특징
+
+### 메모리 절약
+
+전체 OCR 데이터를 한 번에 메모리에 올리지 않고 청크 단위로 처리합니다.
+
+### 중단 후 재개
+
+기존 shard 폴더를 확인하여 이미 처리된 청크를 건너뜁니다.
+
+### 데이터 구조 통일
+
+OCR 데이터와 Alpaca 텍스트 데이터를 동일한 7개 컬럼으로 통합합니다.
+
+### 이미지 용량 절감
+
+이미지를 RGB JPEG 품질 85로 통일하여 저장 및 업로드 용량을 줄입니다.
+
+### 원본 ZIP 파일과 분리
+
+개별 이미지를 Dataset에 포함하므로 Hub 업로드 후 원본 ZIP 파일이 없어도 이미지를 읽을 수 있습니다.
+
+### 멀티모달 및 텍스트 학습 통합
+
+하나의 Dataset에서 다음 두 작업을 함께 구성할 수 있습니다.
+
+```text
+이미지 + 지시문 → OCR 텍스트
+텍스트 지시문 → 텍스트 응답
+```
+
+---
+
+## 27. 잠재적 문제 및 개선 사항
+
+### 27.1 OCR 샘플 제한이 무작위 추출이 아님
+
+현재 코드는 JSON 파일 목록 앞부분만 선택합니다.
+
+```python
+jsonFiles = jsonFiles[
+    :cfg["maxOcrSamples"]
+]
+```
+
+파일 순서에 따라 데이터 편향이 발생할 수 있습니다.
+
+무작위 추출이 필요하면 다음과 같이 변경할 수 있습니다.
+
+```python
+random.shuffle(jsonFiles)
+
+jsonFiles = jsonFiles[
+    :cfg["maxOcrSamples"]
+]
+```
+
+재현성을 위해 `random.seed()`가 이미 설정되어 있습니다.
+
+---
+
+### 27.2 JSON 파일 수집 순서가 고정되지 않을 수 있음
+
+`os.walk()`와 파일 시스템이 반환하는 파일 순서는 운영체제와 환경에 따라 달라질 수 있습니다.
+
+재현 가능한 순서가 필요하면 JSON 파일 목록을 정렬하는 것이 좋습니다.
+
+```python
+jsonFiles = sorted(
+    collectJsonFiles(cfg["ocrLabelRoot"])
+)
+```
+
+---
+
+### 27.3 bbox 읽기 순서 문제
+
+현재 프로그램은 `bbox` 배열의 순서를 그대로 사용합니다.
+
+좌표 정보가 있고 배열 순서가 실제 읽기 순서와 다르다면 OCR 정답이 잘못 구성될 수 있습니다.
+
+필요하면 `y` 좌표와 `x` 좌표를 이용해 정렬해야 합니다.
+
+예시는 다음과 같습니다.
+
+```python
+bboxList = sorted(
+    bboxList,
+    key=lambda box: (
+        box.get("y", 0),
+        box.get("x", 0)
+    )
+)
+```
+
+문서가 여러 줄이면 단순한 `(y, x)` 정렬만으로 충분하지 않을 수 있으므로 줄 그룹화 로직이 추가로 필요할 수 있습니다.
+
+---
+
+### 27.4 빈 문자열 포함 가능성
+
+현재 코드는 `bbox`의 `data`가 없으면 빈 문자열을 추가합니다.
+
+```python
+ocrTokens.append(
+    bboxList[j].get("data", "")
+)
+```
+
+빈 문자열을 제외하려면 다음과 같이 처리할 수 있습니다.
+
+```python
+token = bboxList[j].get(
+    "data",
+    ""
+).strip()
+
+if token:
+    ocrTokens.append(token)
+```
+
+---
+
+### 27.5 이미지 ID 중복
+
+서로 다른 ZIP 파일에 동일한 이미지 파일명이 존재하면 마지막에 발견된 이미지가 기존 값을 덮어씁니다.
+
+```python
+imageMap[imgId] = (
+    zipPath,
+    entry
+)
+```
+
+중복을 확인하려면 다음과 같은 검사를 추가할 수 있습니다.
+
+```python
+if imgId in imageMap:
+    print(
+        f"중복 이미지 ID: {imgId}"
+    )
+```
+
+---
+
+### 27.6 원본 확장자 정보 손실
+
+모든 이미지를 JPEG로 변환하므로 원본이 PNG인지 WebP인지 알 수 없습니다.
+
+원본 형식을 유지하거나 기록하려면 다음 필드를 추가할 수 있습니다.
+
+```python
+"original_extension": ext
+```
+
+---
+
+### 27.7 원본 이미지 ID 및 파일명 미보존
+
+현재 최종 Dataset에는 다음 정보가 별도 컬럼으로 저장되지 않습니다.
+
+* 원본 이미지 ID
+* 원본 JSON 경로
+* ZIP 파일 경로
+* ZIP 내부 이미지 경로
+* 원본 이미지 파일명
+
+데이터 추적성과 오류 분석을 위해 다음 컬럼을 추가하는 것이 유용할 수 있습니다.
+
+```python
+{
+    "image_id": imgId,
+    "json_path": jsonFiles[i],
+    "zip_path": zipPath,
+    "zip_entry": entryPath
+}
+```
+
+다만 로컬 절대 경로를 Hub에 그대로 공개하면 개인정보나 시스템 경로가 노출될 수 있으므로 상대 경로나 파일명만 저장하는 것이 안전합니다.
+
+---
+
+### 27.8 빈 청크 처리
+
+한 청크의 이미지가 모두 누락되거나 오류가 발생하면 `rows`가 빈 리스트가 될 수 있습니다.
+
+저장 전 다음과 같은 검사를 추가할 수 있습니다.
+
+```python
+if not rows:
+    print(
+        f"빈 청크: {chunkIdx}"
+    )
+    continue
+```
+
+---
+
+### 27.9 OCR shard가 하나도 없는 경우
+
+`loadOcrDataset()`에서 shard가 하나도 없으면 `concatenate_datasets()`가 실패할 수 있습니다.
+
+다음과 같은 검사를 추가하는 것이 좋습니다.
+
+```python
+if not chunkDatasets:
+    raise RuntimeError(
+        "로드할 OCR shard가 없습니다."
+    )
+```
+
+---
+
+### 27.10 기존 shard와 현재 설정 불일치
+
+기존 shard 폴더가 존재하면 설정이 변경되어도 다시 처리하지 않습니다.
+
+보다 안전한 재개 기능을 위해 다음 설정을 메타데이터로 저장하고 비교할 수 있습니다.
+
+* instruction
+* input
+* JPEG 품질
+* JSON 파일 수
+* chunk size
+* 코드 버전
+* 원본 데이터 버전
+
+---
+
+### 27.11 JPEG 손실 압축
+
+손글씨의 가는 획이나 작은 글자는 JPEG 압축에 영향을 받을 수 있습니다.
+
+OCR 품질을 우선한다면 다음 방식을 검토할 수 있습니다.
+
+```python
+pilImage.save(
+    imgBuffer,
+    format="JPEG",
+    quality=95
+)
+```
+
+또는 PNG를 유지할 수 있습니다.
+
+```python
+pilImage.save(
+    imgBuffer,
+    format="PNG"
+)
+```
+
+다만 PNG는 Dataset 및 Hub 저장 용량이 커질 수 있습니다.
+
+---
+
+### 27.12 `random.seed()`의 제한적 사용
+
+현재 코드에서는 Python `random` 모듈을 실제 데이터 선택에 사용하지 않습니다.
+
+Dataset 셔플은 다음 코드의 `seed`를 별도로 사용합니다.
+
+```python
+allDataset.shuffle(
+    seed=cfg["seed"]
+)
+```
+
+향후 `random.shuffle(jsonFiles)`를 추가하면 `random.seed()`가 OCR 샘플 선택에도 영향을 주게 됩니다.
+
+---
+
+### 27.13 `imageExts` 설정 중복
+
+`loadSettings()`에서 다음 설정을 반환합니다.
+
+```python
+"imageExts": {
+    ".jpg",
+    ".jpeg",
+    ".png",
+    ".webp"
+}
+```
+
+하지만 `buildZipImageMap()` 내부에서도 동일한 확장자를 다시 정의합니다.
+
+```python
+imageExts = {
+    ".jpg",
+    ".jpeg",
+    ".png",
+    ".webp"
+}
+```
+
+현재 `cfg["imageExts"]`는 실제로 사용되지 않습니다.
+
+설정을 일원화하려면 `buildZipImageMap()`에 이미지 확장자를 전달하도록 수정할 수 있습니다.
+
+```python
+def buildZipImageMap(
+    zipRootDir,
+    imageExts
+):
+    ...
+```
+
+호출은 다음과 같이 변경합니다.
+
+```python
+zipImageMap = buildZipImageMap(
+    cfg["ocrZipRoot"],
+    cfg["imageExts"]
+)
+```
+
+---
+
+## 28. 데이터 검증 예시
+
+### 전체 샘플 수 확인
+
+```python
+print(
+    f"전체 샘플 수: {len(allDataset)}"
+)
+```
+
+### modality별 샘플 수 확인
+
+```python
+from collections import Counter
+
+print(
+    Counter(allDataset["modality"])
+)
+```
+
+### label별 샘플 수 확인
+
+```python
+print(
+    Counter(allDataset["label"])
+)
+```
+
+### 이미지가 정상적으로 로드되는지 확인
+
+```python
+for sample in allDataset:
+    if sample["image"] is not None:
+        print(sample["image"])
+        print(sample["output"])
+        sample["image"].show()
+        break
+```
+
+### 빈 OCR 정답 확인
+
+```python
+emptyOutputs = allDataset.filter(
+    lambda row:
+        row["modality"] == "image_text"
+        and not row["output"].strip()
+)
+
+print(
+    f"빈 OCR 정답: {len(emptyOutputs)}"
+)
+```
+
+---
+
+## 29. 최종 데이터 구조 요약
+
+이 프로그램이 생성하는 Hugging Face Dataset의 기본 구조는 다음과 같습니다.
+
+```text
+Dataset
+├── image_text 샘플
+│   ├── JPEG로 재인코딩된 손글씨 이미지
+│   ├── OCR instruction
+│   ├── OCR input
+│   ├── bbox에서 생성한 정답 텍스트
+│   ├── OCR_handwriting 출처
+│   └── P.Paper 또는 T.Tablet 라벨
+│
+└── text_only 샘플
+    ├── image = None
+    ├── Alpaca instruction
+    ├── Alpaca input
+    ├── Alpaca output
+    ├── generated 출처
+    └── 빈 label
+```
+
+---
+
+## 30. 핵심 요약
+
+`01_data_prep_ocr.py`의 핵심 목적은 다음과 같습니다.
+
+> OCR 라벨 JSON의 `Images.identifier`와 ZIP 내부 이미지 파일명을 연결하고, JSON의 `bbox[].data`를 OCR 정답으로 구성하여 이미지-텍스트 쌍의 Hugging Face Dataset을 생성합니다.
+
+이미지는 ZIP에서 읽은 후 RGB로 변환되고 JPEG 품질 85로 재인코딩됩니다.
+
+재인코딩된 이미지는 Hugging Face Dataset의 `image` 컬럼에 포함되며, OCR 정답 텍스트와 하나의 학습 샘플을 구성합니다.
+
+또한 Alpaca 형식의 텍스트 데이터를 동일한 컬럼 구조로 변환하여 OCR 데이터와 통합합니다.
+
+최종 Dataset은 다음 두 가지 학습 유형을 함께 지원합니다.
+
+```text
+손글씨 이미지 + 지시문 → OCR 텍스트
+텍스트 instruction + input → 텍스트 output
+```
+
+이를 통해 OCR 작업과 일반 텍스트 지시 학습을 하나의 통합 데이터셋으로 관리하고 Hugging Face Hub에 배포할 수 있습니다.
